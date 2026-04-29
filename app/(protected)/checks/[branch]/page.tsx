@@ -1,0 +1,48 @@
+"use client"
+
+import { ArrowLeft } from "@phosphor-icons/react/dist/ssr"
+import Link from "next/link"
+import { useParams } from "next/navigation"
+
+const branchData: Record<string, { name: string }> = {
+  "hardware": { name: "Hardware" },
+  "pawa-gas": { name: "Pawa Gas" },
+  "matnog-gas": { name: "Matnog Gas" },
+  "gotis-hotel": { name: "Gotis Hotel" },
+  "rental": { name: "Rental" },
+  "boarders": { name: "Boarders" },
+}
+
+export default function BranchChecksPage() {
+  const params = useParams()
+  const branch = params.branch as string
+  const data = branchData[branch]
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400 text-sm tracking-wider">Branch not found</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-medium tracking-wide">{data.name}</h1>
+        <Link
+          href="/checks"
+          className="hidden md:inline-flex items-center gap-2 text-xs text-gray-500 hover:text-black transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="tracking-widest uppercase">Back to Checks</span>
+        </Link>
+      </div>
+      <div className="border border-gray-200 p-12 text-center">
+        <p className="text-gray-400 text-sm tracking-wider">
+          {data.name} checks content coming soon
+        </p>
+      </div>
+    </>
+  )
+}
