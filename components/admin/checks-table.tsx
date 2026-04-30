@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import {
   ColumnDef,
   flexRender,
@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowUp, ArrowDown, CaretUpDown, Funnel, Eye, Trash, CaretDown, Copy } from "@phosphor-icons/react"
+import { ArrowUp, ArrowDown, CaretUpDown, Funnel, Bank, Trash, CaretDown, Copy } from "@phosphor-icons/react"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -28,6 +28,7 @@ import {
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format, parse, differenceInDays } from "date-fns"
+import { createClient } from "@/lib/supabase/client"
 
 // Branch badge colors (matching other tables)
 const branchBadgeColors: Record<number, { bg: string; text: string; border: string }> = {
@@ -54,6 +55,7 @@ const statusColors: Record<string, { bg: string; text: string; border: string }>
   due_today: { bg: "bg-orange-100/50", text: "text-orange-700", border: "border-orange-300" },
   due_tomorrow: { bg: "bg-amber-100/50", text: "text-amber-700", border: "border-amber-300" },
   overdue: { bg: "bg-red-100/50", text: "text-red-700", border: "border-red-300" },
+  deposited: { bg: "bg-green-100/50", text: "text-green-700", border: "border-green-300" },
 }
 
 const statusLabels: Record<string, string> = {
@@ -61,6 +63,7 @@ const statusLabels: Record<string, string> = {
   due_today: "Due Today",
   due_tomorrow: "Due Tomorrow",
   overdue: "Overdue",
+  deposited: "Deposited",
 }
 
 // Format currency
@@ -71,15 +74,17 @@ const formatCurrency = (amount: number): string => {
   }).format(amount)
 }
 
-// Calculate status based on check date
-const getCheckStatus = (checkDate: string): string => {
+// Resolve display status: deposited takes priority, otherwise derive from check date
+const resolveCheckStatus = (transactionStatus: number, checkDate: string | null): string => {
+  if (transactionStatus === 2) return "deposited"
+  if (!checkDate) return "pending"
+
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const checkDateObj = new Date(checkDate)
   checkDateObj.setHours(0, 0, 0, 0)
-  
+
   const daysDiff = differenceInDays(checkDateObj, today)
-  
   if (daysDiff < 0) return "overdue"
   if (daysDiff === 0) return "due_today"
   if (daysDiff === 1) return "due_tomorrow"
@@ -87,7 +92,7 @@ const getCheckStatus = (checkDate: string): string => {
 }
 
 interface CheckRow {
-  id: string
+  id: number
   transaction_date: string
   branch_id: number
   branch_name: string
@@ -96,94 +101,15 @@ interface CheckRow {
   check_number: string
   check_date: string
   amount: number
+  transaction_status: number
   status: string
   created_at: string
 }
 
-// Dummy data
-const dummyData: CheckRow[] = [
-  {
-    id: "1",
-    transaction_date: "2026-04-10",
-    branch_id: 1,
-    branch_name: "Hardware",
-    transaction_id: 10045,
-    bank_name: "BDO Sorsogon",
-    check_number: "0012345",
-    check_date: "2026-04-15",
-    amount: 125000,
-    status: "pending",
-    created_at: "2026-04-10T09:30:00Z",
-  },
-  {
-    id: "2",
-    transaction_date: "2026-04-09",
-    branch_id: 2,
-    branch_name: "Pawa Gas",
-    transaction_id: 10044,
-    bank_name: "Metrobank Bulan",
-    check_number: "0098765",
-    check_date: "2026-04-13",
-    amount: 85000,
-    status: "due_tomorrow",
-    created_at: "2026-04-09T10:15:00Z",
-  },
-  {
-    id: "3",
-    transaction_date: "2026-04-08",
-    branch_id: 3,
-    branch_name: "Matnog Gas",
-    transaction_id: 10042,
-    bank_name: "BPI Sorsogon",
-    check_number: "0054321",
-    check_date: "2026-04-10",
-    amount: 62500,
-    status: "overdue",
-    created_at: "2026-04-08T11:00:00Z",
-  },
-  {
-    id: "4",
-    transaction_date: "2026-04-07",
-    branch_id: 4,
-    branch_name: "Gotis Hotel",
-    transaction_id: 10040,
-    bank_name: "Landbank Bulan",
-    check_number: "0011223",
-    check_date: "2026-04-20",
-    amount: 250000,
-    status: "pending",
-    created_at: "2026-04-07T14:30:00Z",
-  },
-  {
-    id: "5",
-    transaction_date: "2026-04-06",
-    branch_id: 1,
-    branch_name: "Hardware",
-    transaction_id: 10038,
-    bank_name: "PNB Sorsogon",
-    check_number: "0033445",
-    check_date: "2026-04-11",
-    amount: 95000,
-    status: "overdue",
-    created_at: "2026-04-06T16:00:00Z",
-  },
-  {
-    id: "6",
-    transaction_date: "2026-04-12",
-    branch_id: 5,
-    branch_name: "Rental",
-    transaction_id: 10050,
-    bank_name: "BDO Bulan",
-    check_number: "0077891",
-    check_date: "2026-04-12",
-    amount: 48000,
-    status: "due_today",
-    created_at: "2026-04-12T08:00:00Z",
-  },
-]
 
 export function ChecksTable() {
-  const [data] = useState<CheckRow[]>(dummyData)
+  const [data, setData] = useState<CheckRow[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([])
   const [rowSelection, setRowSelection] = useState({})
   
@@ -197,24 +123,33 @@ export function ChecksTable() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [checkToDelete, setCheckToDelete] = useState<CheckRow | null>(null)
 
-  // Filter data
+  useEffect(() => {
+    const fetchChecks = async () => {
+      setIsLoading(true)
+      const supabase = createClient()
+      const { data: rows, error } = await supabase.rpc("get_check_transactions", {
+        p_branch_id: branchFilter !== "all" ? parseInt(branchFilter) : null,
+        p_date: dateFilter || null,
+      })
+      if (!error && rows) {
+        setData(
+          rows.map((row: any) => ({
+            ...row,
+            status: resolveCheckStatus(row.transaction_status, row.check_date),
+          }))
+        )
+      }
+      setIsLoading(false)
+    }
+    fetchChecks()
+  }, [branchFilter, dateFilter])
+
+  // Branch and date filters are applied server-side via RPC.
+  // Only status filter is applied client-side.
   const filteredData = useMemo(() => {
-    let filtered = data
-    
-    if (branchFilter !== "all") {
-      filtered = filtered.filter(item => item.branch_id === parseInt(branchFilter))
-    }
-    
-    if (statusFilter.length > 0) {
-      filtered = filtered.filter(item => statusFilter.includes(item.status))
-    }
-    
-    if (dateFilter) {
-      filtered = filtered.filter(item => item.transaction_date === dateFilter)
-    }
-    
-    return filtered
-  }, [data, branchFilter, statusFilter, dateFilter])
+    if (statusFilter.length === 0) return data
+    return data.filter(item => statusFilter.includes(item.status))
+  }, [data, statusFilter])
 
   const handleDelete = (check: CheckRow) => {
     setCheckToDelete(check)
@@ -229,8 +164,26 @@ export function ChecksTable() {
     }
   }
 
-  const handleView = (check: CheckRow) => {
-    toast.info(`Viewing check ${check.check_number}`)
+  const handleDeposit = async (check: CheckRow) => {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("shift_transactions")
+      .update({ status: 2 })
+      .eq("id", check.id)
+
+    if (error) {
+      toast.error("Failed to mark check as deposited.")
+      return
+    }
+
+    setData(prev =>
+      prev.map(row =>
+        row.id === check.id
+          ? { ...row, transaction_status: 2, status: "deposited" }
+          : row
+      )
+    )
+    toast.success(`Check ${check.check_number} marked as deposited`)
   }
 
   const columns: ColumnDef<CheckRow>[] = [
@@ -424,10 +377,11 @@ export function ChecksTable() {
               variant="outline"
               size="sm"
               className="text-xs flex items-center gap-1.5 px-3"
-              onClick={() => handleView(row.original)}
+              onClick={() => handleDeposit(row.original)}
+              disabled={row.original.transaction_status === 2}
             >
-              <Eye className="w-3.5 h-3.5" />
-              View
+              <Bank className="w-3.5 h-3.5" />
+              Deposit
             </Button>
             <Button
               variant="outline"
@@ -496,7 +450,7 @@ export function ChecksTable() {
                   {statusFilter.length === 0
                     ? <span className="text-muted-foreground">All Statuses</span>
                     : statusFilter.length === 1
-                    ? ({ pending: "Pending", due_today: "Due Today", due_tomorrow: "Due Tomorrow", overdue: "Overdue" }[statusFilter[0]] ?? statusFilter[0])
+                    ? ({ pending: "Pending", due_today: "Due Today", due_tomorrow: "Due Tomorrow", overdue: "Overdue", deposited: "Deposited" }[statusFilter[0]] ?? statusFilter[0])
                     : `${statusFilter.length} selected`}
                 </span>
                 <CaretDown className="size-4 opacity-50 shrink-0" />
@@ -513,6 +467,7 @@ export function ChecksTable() {
                 { value: "due_today", label: "Due Today" },
                 { value: "due_tomorrow", label: "Due Tomorrow" },
                 { value: "overdue", label: "Overdue" },
+                { value: "deposited", label: "Deposited" },
               ].map(({ value, label }) => {
                 const selected = statusFilter.includes(value)
                 return (
@@ -610,7 +565,13 @@ export function ChecksTable() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-gray-400 font-mono text-sm">
+                  Loading...
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
                   {row.getVisibleCells().map((cell) => (

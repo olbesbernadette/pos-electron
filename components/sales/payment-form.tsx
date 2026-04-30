@@ -157,11 +157,16 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
 
     const currentIdempotencyKey = idempotencyKeyRef.current
 
-    // Determine details1 and details2 based on branch
-    // For Pawa Gas (2), Matnog Gas (3), Gotis Hotel (4): details1 = Shift Date, details2 = Shift Number
-    // For Hardware (1) and others: details1 and details2 are null
-    const details1 = needsShiftFields && shiftDate ? shiftDate : null
-    const details2 = needsShiftFields && shiftNumber ? shiftNumber : null
+    // Determine details1, details2, details3 based on payment type and branch
+    let details1: string | null = needsShiftFields && shiftDate ? shiftDate : null
+    let details2: string | null = needsShiftFields && shiftNumber ? shiftNumber : null
+    let details3: string | null = null
+
+    if (selectedPayment === 3) {
+      details1 = bankNameBranch || null
+      details2 = checkNumber || null
+      details3 = checkDate || null
+    }
 
     // Determine status: default 1 (undeposited), but Credit (4) = status 3 (receivable)
     const status = selectedPayment === 4 ? 3 : 1
@@ -186,6 +191,7 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
           idempotency_key: currentIdempotencyKey,
           details1,
           details2,
+          details3,
           status,
         })
         .select("id")
