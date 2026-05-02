@@ -122,6 +122,7 @@ export function ChecksTable() {
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [checkToDelete, setCheckToDelete] = useState<CheckRow | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     const fetchChecks = async () => {
@@ -156,12 +157,23 @@ export function ChecksTable() {
     setDeleteDialogOpen(true)
   }
 
-  const confirmDelete = () => {
-    if (checkToDelete) {
-      toast.success(`Check ${checkToDelete.check_number} deleted`)
-      setDeleteDialogOpen(false)
-      setCheckToDelete(null)
+  const confirmDelete = async () => {
+    if (!checkToDelete) return
+    setIsDeleting(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.rpc("delete_check_transaction", {
+      p_transaction_id: checkToDelete.id,
+    })
+    setIsDeleting(false)
+    if (error || data?.success === false) {
+      console.error("delete_check_transaction error:", error, data)
+      toast.error(data?.error ?? error?.message ?? "Failed to delete check transaction")
+      return
     }
+    setData(prev => prev.filter(row => row.id !== checkToDelete.id))
+    toast.success(`Check ${checkToDelete.check_number} deleted`)
+    setDeleteDialogOpen(false)
+    setCheckToDelete(null)
   }
 
   const handleDeposit = async (check: CheckRow) => {
@@ -620,12 +632,13 @@ export function ChecksTable() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
+              disabled={isDeleting}
               className="bg-red-600 hover:bg-red-700"
             >
-              Delete
+              {isDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

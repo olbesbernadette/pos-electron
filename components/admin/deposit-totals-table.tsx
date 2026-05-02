@@ -347,7 +347,7 @@ export function DepositTotalsTable() {
                 key={dep.deposit_id}
                 type="button"
                 onClick={() => {
-                  setBreakdownDialogData({
+setBreakdownDialogData({
                     paymentType: dep.deposit_type,
                     transactions: dep.transactions,
                     depositInfo: {
@@ -574,7 +574,7 @@ export function DepositTotalsTable() {
 
       {/* Breakdown Transaction Details Dialog */}
       <Dialog open={breakdownDialogOpen} onOpenChange={setBreakdownDialogOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm flex flex-col max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="font-mono text-sm tracking-wide">
               {breakdownDialogData && (
@@ -585,40 +585,42 @@ export function DepositTotalsTable() {
             </DialogTitle>
           </DialogHeader>
           {breakdownDialogData && (
-            <div className="mt-2 flex flex-col gap-3">
+            <div className="flex flex-col gap-3 min-h-0">
               {/* Deposit Info */}
               <div className="text-xs font-mono text-gray-500">
                 {breakdownDialogData.depositInfo.branchName} &mdash;{" "}
                 {format(new Date(breakdownDialogData.depositInfo.depositDate), "MMMM d, yyyy")}
               </div>
               {/* Transactions list */}
-              <div className="border border-gray-200 rounded-md overflow-hidden">
-                {/* Header */}
-                <div className="grid grid-cols-[1fr_auto] px-3 py-2 bg-gray-50 border-b border-gray-200">
+              <div className="border border-gray-200 rounded-md overflow-hidden flex flex-col min-h-0">
+                {/* Header — pinned */}
+                <div className="grid grid-cols-[1fr_auto] px-3 py-2 bg-gray-50 border-b border-gray-200 shrink-0">
                   <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Details</span>
                   <span className="text-xs font-mono text-gray-500 uppercase tracking-wider text-right">Amount</span>
                 </div>
-                {/* Rows */}
-                {breakdownDialogData.transactions.length === 0 ? (
-                  <div className="px-3 py-4 text-xs font-mono text-gray-400 text-center">No transactions</div>
-                ) : (
-                  breakdownDialogData.transactions.map((txn, idx) => (
-                    <div
-                      key={idx}
-                      className={`grid grid-cols-[1fr_auto] items-center px-3 py-3 gap-4 ${idx < breakdownDialogData.transactions.length - 1 ? "border-b border-gray-100" : ""}`}
-                    >
-                      <div className="flex flex-col gap-0.5">
-                        {txn.details1 && <span className="text-sm font-mono">{txn.details1}</span>}
-                        {txn.details2 && <span className="text-xs font-mono text-gray-400">{txn.details2}</span>}
-                        {!txn.details1 && !txn.details2 && <span className="text-xs font-mono text-gray-400">—</span>}
+                {/* Scrollable rows */}
+                <div className="overflow-y-auto">
+                  {breakdownDialogData.transactions.length === 0 ? (
+                    <div className="px-3 py-4 text-xs font-mono text-gray-400 text-center">No transactions</div>
+                  ) : (
+                    breakdownDialogData.transactions.map((txn, idx) => (
+                      <div
+                        key={idx}
+                        className={`grid grid-cols-[1fr_auto] items-start px-3 py-3 gap-4 ${idx < breakdownDialogData.transactions.length - 1 ? "border-b border-gray-100" : ""}`}
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          {txn.details1 && <span className="text-sm font-mono">{txn.details1}</span>}
+                          {txn.details2 && <span className="text-xs font-mono text-gray-400">{txn.details2}</span>}
+                          {!txn.details1 && !txn.details2 && <span className="text-xs font-mono text-gray-400">—</span>}
+                        </div>
+                        <span className="text-sm font-mono font-medium text-right">{formatCurrency(Number(txn.amount))}</span>
                       </div>
-                      <span className="text-sm font-mono font-medium text-right">{formatCurrency(Number(txn.amount))}</span>
-                    </div>
-                  ))
-                )}
-                {/* Total row */}
+                    ))
+                  )}
+                </div>
+                {/* Total row — pinned */}
                 {breakdownDialogData.transactions.length > 1 && (
-                  <div className="grid grid-cols-[1fr_auto] px-3 py-2 bg-gray-50 border-t border-gray-200">
+                  <div className="grid grid-cols-[1fr_auto] px-3 py-2 bg-gray-50 border-t border-gray-200 shrink-0">
                     <span className="text-xs font-mono text-gray-500">Total</span>
                     <span className="text-sm font-mono font-semibold text-right">
                       {formatCurrency(breakdownDialogData.transactions.reduce((sum, t) => sum + Number(t.amount), 0))}
