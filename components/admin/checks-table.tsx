@@ -25,6 +25,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format, parse, differenceInDays } from "date-fns"
@@ -97,6 +104,7 @@ interface CheckRow {
   branch_id: number
   branch_name: string
   transaction_id: number
+  shift_id: number
   bank_name: string
   check_number: string
   check_date: string
@@ -123,6 +131,11 @@ export function ChecksTable() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [checkToDelete, setCheckToDelete] = useState<CheckRow | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  // Deposit dialog state
+  const [depositDialogOpen, setDepositDialogOpen] = useState(false)
+  const [depositDate, setDepositDate] = useState<Date | undefined>(undefined)
+  const [depositDatePickerOpen, setDepositDatePickerOpen] = useState(false)
+  const [isDepositing, setIsDepositing] = useState(false)
 
   useEffect(() => {
     const fetchChecks = async () => {
@@ -132,7 +145,10 @@ export function ChecksTable() {
         p_branch_id: branchFilter !== "all" ? parseInt(branchFilter) : null,
         p_date: dateFilter || null,
       })
-      if (!error && rows) {
+      if (error) {
+        console.error("get_check_transactions error:", error)
+        toast.error(error.message || "Failed to fetch checks")
+      } else if (rows) {
         setData(
           rows.map((row: any) => ({
             ...row,
@@ -176,28 +192,6 @@ export function ChecksTable() {
     setCheckToDelete(null)
   }
 
-  const handleDeposit = async (check: CheckRow) => {
-    const supabase = createClient()
-    const { error } = await supabase
-      .from("shift_transactions")
-      .update({ status: 2 })
-      .eq("id", check.id)
-
-    if (error) {
-      toast.error("Failed to mark check as deposited.")
-      return
-    }
-
-    setData(prev =>
-      prev.map(row =>
-        row.id === check.id
-          ? { ...row, transaction_status: 2, status: "deposited" }
-          : row
-      )
-    )
-    toast.success(`Check ${check.check_number} marked as deposited`)
-  }
-
   const columns: ColumnDef<CheckRow>[] = [
     {
       id: "select",
@@ -237,13 +231,21 @@ export function ChecksTable() {
       ),
       cell: ({ row }) => {
         const transactionDate = new Date(row.getValue("transaction_date"))
+        const shiftId = row.original.shift_id
         return (
-          <div className="font-mono text-sm">
-            {transactionDate.toLocaleDateString("en-PH", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            })}
+          <div className="flex flex-col border border-gray-200 rounded-md">
+            <div className="px-3 py-2 font-mono text-sm">
+              {transactionDate.toLocaleDateString("en-PH", {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </div>
+            <div className="mx-3 h-px bg-gray-200" />
+            <div className="px-3 py-2 flex items-center gap-3">
+              <span className="text-xs font-mono text-gray-500 tracking-wider">Shift</span>
+              <span className="font-mono text-sm font-medium">#{shiftId}</span>
+            </div>
           </div>
         )
       },
@@ -389,16 +391,6 @@ export function ChecksTable() {
               variant="outline"
               size="sm"
               className="text-xs flex items-center gap-1.5 px-3"
-              onClick={() => handleDeposit(row.original)}
-              disabled={row.original.transaction_status === 2}
-            >
-              <Bank className="w-3.5 h-3.5" />
-              Deposit
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs flex items-center gap-1.5 px-3"
               onClick={() => handleDelete(row.original)}
             >
               <Trash className="w-3.5 h-3.5" />
@@ -422,6 +414,77 @@ export function ChecksTable() {
       rowSelection,
     },
   })
+
+  const openDepositDialog = () => {
+    const selectedRows = table.getFilteredSelectedRowModel().rows
+    const uniqueBranches = new Set(selectedRows.map(r => r.original.branch_id))
+    if (uniqueBranches.size > 1) {
+      toast.error("All selected checks must be from the same branch.")
+      return
+    }
+    const uniqueShifts = new Set(selectedRows.map(r => r.original.shift_id))
+    if (uniqueShifts.size > 1) {
+      toast.error("All selected checks must be from the same shift.")
+      return
+    }
+    setDepositDate(undefined)
+    setDepositDialogOpen(true)
+  }
+
+  const confirmDeposit = async () => {
+    if (!depositDate) return
+    const selectedRows = table.getFilteredSelectedRowModel().rows
+    if (selectedRows.length === 0) return
+
+    setIsDepositing(true)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const transactionIds = selectedRows.map(r => r.original.id)
+    const totalAmount = selectedRows.reduce((sum, r) => sum + r.original.amount, 0)
+
+    const branchNames = [...new Set(selectedRows.map(r => r.original.branch_name))]
+    const branchIds = [...new Set(selectedRows.map(r => r.original.branch_id))]
+    const branchLabel = branchNames.length === 1 ? branchNames[0] : "Multiple Branches"
+    const branchId = branchIds.length === 1 ? branchIds[0] : null
+
+    const depositTransactions = selectedRows.map(r => ({
+      payment_type: 3,
+      amount: r.original.amount,
+      details1: r.original.bank_name,
+      details2: r.original.check_number,
+    }))
+
+    const { error } = await supabase.rpc("create_deposit", {
+      p_transaction_ids: transactionIds,
+      p_deposit_date: format(depositDate, "yyyy-MM-dd"),
+      p_deposit_type: 2,
+      p_total_amount: totalAmount,
+      p_deposit_transactions: depositTransactions,
+      p_notes: `Deposit for ${branchLabel} - Check`,
+      p_created_by: user?.id ?? null,
+      p_shift_id: selectedRows[0].original.shift_id,
+      p_branch_id: branchId,
+    })
+
+    setIsDepositing(false)
+
+    if (error) {
+      toast.error(error.message || "Failed to create deposit")
+      return
+    }
+
+    setData(prev =>
+      prev.map(row =>
+        transactionIds.includes(row.id)
+          ? { ...row, transaction_status: 2, status: "deposited" }
+          : row
+      )
+    )
+    toast.success(`${transactionIds.length} check(s) deposited successfully`)
+    setDepositDialogOpen(false)
+    table.resetRowSelection()
+  }
 
   return (
     <div className="space-y-4">
@@ -558,6 +621,18 @@ export function ChecksTable() {
             </button>
           )}
         </div>
+
+        {table.getFilteredSelectedRowModel().rows.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto text-xs flex items-center gap-1.5 px-3"
+            onClick={openDepositDialog}
+          >
+            <Bank className="w-3.5 h-3.5" />
+            Deposit ({table.getFilteredSelectedRowModel().rows.length})
+          </Button>
+        )}
       </div>
 
       {/* Table */}
@@ -614,6 +689,81 @@ export function ChecksTable() {
           Total: {filteredData.length} checks
         </div>
       </div>
+
+      {/* Deposit Dialog */}
+      <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Deposit Checks</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Summary */}
+            <div className="p-3 bg-gray-50 rounded-md space-y-1 font-mono text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Selected</span>
+                <span className="font-medium">{table.getFilteredSelectedRowModel().rows.length} check(s)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Total</span>
+                <span className="font-medium">
+                  {formatCurrency(
+                    table.getFilteredSelectedRowModel().rows.reduce((sum, r) => sum + r.original.amount, 0)
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Notes</span>
+                <span className="font-medium text-right text-xs leading-snug max-w-[180px]">
+                  {(() => {
+                    const rows = table.getFilteredSelectedRowModel().rows
+                    const names = [...new Set(rows.map(r => r.original.branch_name))]
+                    return `Deposit for ${names.length === 1 ? names[0] : "Multiple Branches"} - Check`
+                  })()}
+                </span>
+              </div>
+            </div>
+
+            {/* Deposit Date */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono text-gray-500">Deposit Date <span className="text-red-500">*</span></label>
+              <Popover open={depositDatePickerOpen} onOpenChange={setDepositDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="w-full h-9 px-3 text-xs font-mono border border-gray-200 rounded-md text-left flex items-center gap-2 focus:outline-none focus:border-black transition-colors"
+                  >
+                    <span className={depositDate ? "text-black" : "text-gray-400"}>
+                      {depositDate ? format(depositDate, "MMM d, yyyy") : "Pick a date"}
+                    </span>
+                    <CaretDown className="w-3 h-3 text-gray-400 ml-auto" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={depositDate}
+                    onSelect={(date) => {
+                      setDepositDate(date)
+                      setDepositDatePickerOpen(false)
+                    }}
+                    defaultMonth={depositDate}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDepositDialogOpen(false)} disabled={isDepositing}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={confirmDeposit} disabled={!depositDate || isDepositing}>
+              {isDepositing ? "Depositing..." : "Confirm Deposit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
