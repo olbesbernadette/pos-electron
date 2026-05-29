@@ -11,7 +11,6 @@ import {
   AreaChart,
   Area,
   CartesianGrid,
-  Cell,
 } from "recharts"
 import {
   ChartContainer,
@@ -65,37 +64,36 @@ const expenseTypeNames: Record<number, string> = {
   10: "Others",
 }
 
-// Badge-style: light fill (100/50%) + solid border (300) — matches branch badges in tables
 const branchBarColors: Record<number, { fill: string; stroke: string }> = {
-  1: { fill: "rgba(207,250,254,0.5)", stroke: "#67e8f9" },  // cyan
-  2: { fill: "rgba(254,243,199,0.5)", stroke: "#fcd34d" },  // amber
-  3: { fill: "rgba(255,228,230,0.5)", stroke: "#fda4af" },  // rose
-  4: { fill: "rgba(237,233,254,0.5)", stroke: "#c4b5fd" },  // violet
-  5: { fill: "rgba(209,250,229,0.5)", stroke: "#6ee7b7" },  // emerald
-  6: { fill: "rgba(224,242,254,0.5)", stroke: "#7dd3fc" },  // sky
+  1: { fill: "#22d3ee", stroke: "#06b6d4" },  // cyan-400 / cyan-500
+  2: { fill: "#38bdf8", stroke: "#0ea5e9" },  // sky-400 / sky-500
+  3: { fill: "#818cf8", stroke: "#6366f1" },  // indigo-400 / indigo-500
+  4: { fill: "#a78bfa", stroke: "#8b5cf6" },  // violet-400 / violet-500
+  5: { fill: "#2dd4bf", stroke: "#14b8a6" },  // teal-400 / teal-500
+  6: { fill: "#60a5fa", stroke: "#3b82f6" },  // blue-400 / blue-500
 }
 
 const expenseBarColors: Record<string, { fill: string; stroke: string }> = {
-  Payroll:     { fill: "rgba(255,228,230,0.5)", stroke: "#fda4af" },  // rose
-  Deposit:     { fill: "rgba(224,242,254,0.5)", stroke: "#7dd3fc" },  // sky
-  Repairs:     { fill: "rgba(254,243,199,0.5)", stroke: "#fcd34d" },  // amber
-  Utilities:   { fill: "rgba(237,233,254,0.5)", stroke: "#c4b5fd" },  // violet
-  "Port Fees": { fill: "rgba(207,250,254,0.5)", stroke: "#67e8f9" },  // cyan
-  Others:      { fill: "rgba(243,244,246,0.5)", stroke: "#d1d5db" },  // gray
+  Payroll:     { fill: "#a78bfa", stroke: "#8b5cf6" },  // violet
+  Deposit:     { fill: "#22d3ee", stroke: "#06b6d4" },  // cyan
+  Repairs:     { fill: "#818cf8", stroke: "#6366f1" },  // indigo
+  Utilities:   { fill: "#c084fc", stroke: "#a855f7" },  // purple
+  "Port Fees": { fill: "#38bdf8", stroke: "#0ea5e9" },  // sky
+  Others:      { fill: "#94a3b8", stroke: "#64748b" },  // slate
 }
 
 const formatCurrency = (amount: number) =>
   `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
 
 const overviewConfig: ChartConfig = {
-  sales:    { label: "Sales",    color: "#67e8f9" },  // cyan-300
-  expenses: { label: "Expenses", color: "#fda4af" },  // rose-300
+  sales:    { label: "Sales",    color: "#22d3ee" },  // cyan-400
+  expenses: { label: "Expenses", color: "#a78bfa" },  // violet-400
 }
 
 const depositsConfig: ChartConfig = {
-  cash:  { label: "Cash",  color: "#6ee7b7" },  // emerald-300
-  check: { label: "Check", color: "#c4b5fd" },  // violet-300
-  gcash: { label: "GCash", color: "#7dd3fc" },  // sky-300
+  cash:  { label: "Cash",  color: "#22d3ee" },  // cyan-400
+  check: { label: "Check", color: "#a78bfa" },  // violet-400
+  gcash: { label: "GCash", color: "#38bdf8" },  // sky-400
 }
 
 function localDateString(date: Date): string {
@@ -504,7 +502,7 @@ export function AdminDashboard() {
       </div>
 
       {/* Filters */}
-      <div className="space-y-3">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         {/* Branch filter */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0 w-16">Branch:</span>
@@ -533,7 +531,7 @@ export function AdminDashboard() {
           ))}
         </div>
 
-        {/* Date range filter */}
+        {/* Period filter */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0 w-16">Period:</span>
           {(["today", "mtd", "last_month", "year", "custom"] as DateRangeOption[]).map((opt) => (
@@ -645,44 +643,9 @@ export function AdminDashboard() {
           loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           empty={salesByBranch.length === 0}
           emptyMessage={dateRangeOption === "today" ? (currentShiftId ? "No sales in current shift" : "No open shift") : "No sales data for this period"}
+          chartClassName=""
         >
-          <ChartContainer config={{ amount: { label: "Sales" } }} className="h-full w-full">
-            <BarChart
-              data={salesByBranch}
-              layout="vertical"
-              margin={{ left: 8, right: 32, top: 4, bottom: 4 }}
-            >
-              <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                type="number"
-                tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                type="category"
-                dataKey="branch"
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
-                axisLine={false}
-                tickLine={false}
-                width={76}
-              />
-              <ChartTooltip
-                content={
-                  <ChartTooltipContent
-                    formatter={(v) => formatCurrency(Number(v))}
-                    hideLabel
-                  />
-                }
-              />
-              <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                {salesByBranch.map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} stroke={entry.stroke} strokeWidth={1.5} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
+          <BarList items={salesByBranch.map(e => ({ label: e.branch, amount: e.amount, fill: e.fill }))} />
         </ChartCard>
 
         <ChartCard
@@ -691,44 +654,9 @@ export function AdminDashboard() {
           loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           empty={expensesByType.length === 0}
           emptyMessage={dateRangeOption === "today" ? (currentShiftId ? "No expenses in current shift" : "No open shift") : "No expense data for this period"}
+          chartClassName=""
         >
-          <ChartContainer config={{ amount: { label: "Expenses" } }} className="h-full w-full">
-            <BarChart
-              data={expensesByType}
-              layout="vertical"
-              margin={{ left: 8, right: 32, top: 4, bottom: 4 }}
-            >
-              <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                type="number"
-                tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                type="category"
-                dataKey="type"
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
-                axisLine={false}
-                tickLine={false}
-                width={76}
-              />
-              <ChartTooltip
-                content={
-                  <ChartTooltipContent
-                    formatter={(v) => formatCurrency(Number(v))}
-                    hideLabel
-                  />
-                }
-              />
-              <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                {expensesByType.map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} stroke={entry.stroke} strokeWidth={1.5} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
+          <BarList items={expensesByType.map(e => ({ label: e.type, amount: e.amount, fill: e.fill }))} />
         </ChartCard>
       </div>
 
@@ -744,12 +672,12 @@ export function AdminDashboard() {
             <AreaChart data={overviewData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="gradSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#67e8f9" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#67e8f9" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gradExpenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#fda4af" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#fda4af" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -778,7 +706,7 @@ export function AdminDashboard() {
               <Area
                 type="monotone"
                 dataKey="sales"
-                stroke="#67e8f9"
+                stroke="#22d3ee"
                 strokeWidth={2}
                 fill="url(#gradSales)"
                 dot={false}
@@ -786,7 +714,7 @@ export function AdminDashboard() {
               <Area
                 type="monotone"
                 dataKey="expenses"
-                stroke="#fda4af"
+                stroke="#a78bfa"
                 strokeWidth={2}
                 fill="url(#gradExpenses)"
                 dot={false}
@@ -826,13 +754,43 @@ export function AdminDashboard() {
                 }
               />
               <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="cash" stackId="a" fill="rgba(209,250,229,0.5)" stroke="#6ee7b7" strokeWidth={1} maxBarSize={40} />
-              <Bar dataKey="check" stackId="a" fill="rgba(237,233,254,0.5)" stroke="#c4b5fd" strokeWidth={1} maxBarSize={40} />
-              <Bar dataKey="gcash" stackId="a" fill="rgba(224,242,254,0.5)" stroke="#7dd3fc" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="cash" stackId="a" fill="#22d3ee" maxBarSize={40} />
+              <Bar dataKey="check" stackId="a" fill="#a78bfa" maxBarSize={40} />
+              <Bar dataKey="gcash" stackId="a" fill="#38bdf8" radius={[4, 4, 0, 0]} maxBarSize={40} />
             </BarChart>
           </ChartContainer>
         </ChartCard>
       </div>
+    </div>
+  )
+}
+
+function BarList({ items }: { items: { label: string; amount: number; fill: string }[] }) {
+  const max = Math.max(...items.map((i) => i.amount), 1)
+  const total = items.reduce((s, i) => s + i.amount, 0)
+  return (
+    <div className="space-y-3">
+      {items.map((item, idx) => {
+        const pct = total > 0 ? Math.round((item.amount / total) * 100) : 0
+        const barWidth = (item.amount / max) * 100
+        return (
+          <div key={idx}>
+            <div className="flex items-baseline justify-between mb-1">
+              <span className="text-xs font-mono text-gray-600">
+                {item.label}{" "}
+                <span className="text-gray-400">{pct}%</span>
+              </span>
+              <span className="text-xs font-mono text-gray-500 tabular-nums">{formatCurrency(item.amount)}</span>
+            </div>
+            <div className="h-1.5 w-full bg-gray-100 rounded-sm overflow-hidden">
+              <div
+                className="h-full rounded-sm"
+                style={{ width: `${barWidth}%`, backgroundColor: item.fill }}
+              />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -877,6 +835,7 @@ function ChartCard({
   loading,
   empty,
   emptyMessage = "No data",
+  chartClassName,
   children,
 }: {
   title: string
@@ -884,6 +843,7 @@ function ChartCard({
   loading: boolean
   empty: boolean
   emptyMessage?: string
+  chartClassName?: string
   children?: React.ReactNode
 }) {
   return (
@@ -892,7 +852,7 @@ function ChartCard({
         <h3 className="text-sm font-medium tracking-wide">{title}</h3>
         <p className="text-xs font-mono text-gray-400 mt-0.5">{subtitle}</p>
       </div>
-      <div className="flex-1 min-h-[200px] sm:min-h-[260px]">
+      <div className={chartClassName ?? "flex-1 min-h-[200px] sm:min-h-[260px]"}>
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-xs font-mono text-gray-400 tracking-wider">Loading...</p>
