@@ -65,36 +65,37 @@ const expenseTypeNames: Record<number, string> = {
   10: "Others",
 }
 
-const branchColors: Record<number, string> = {
-  1: "#0891b2",
-  2: "#d97706",
-  3: "#e11d48",
-  4: "#7c3aed",
-  5: "#059669",
-  6: "#0284c7",
+// Badge-style: light fill (100/50%) + solid border (300) — matches branch badges in tables
+const branchBarColors: Record<number, { fill: string; stroke: string }> = {
+  1: { fill: "rgba(207,250,254,0.5)", stroke: "#67e8f9" },  // cyan
+  2: { fill: "rgba(254,243,199,0.5)", stroke: "#fcd34d" },  // amber
+  3: { fill: "rgba(255,228,230,0.5)", stroke: "#fda4af" },  // rose
+  4: { fill: "rgba(237,233,254,0.5)", stroke: "#c4b5fd" },  // violet
+  5: { fill: "rgba(209,250,229,0.5)", stroke: "#6ee7b7" },  // emerald
+  6: { fill: "rgba(224,242,254,0.5)", stroke: "#7dd3fc" },  // sky
 }
 
-const expenseColors: Record<string, string> = {
-  Payroll:   "#dc2626",
-  Deposit:   "#2563eb",
-  Repairs:   "#ea580c",
-  Utilities: "#9333ea",
-  "Port Fees": "#0891b2",
-  Others:    "#6b7280",
+const expenseBarColors: Record<string, { fill: string; stroke: string }> = {
+  Payroll:     { fill: "rgba(255,228,230,0.5)", stroke: "#fda4af" },  // rose
+  Deposit:     { fill: "rgba(224,242,254,0.5)", stroke: "#7dd3fc" },  // sky
+  Repairs:     { fill: "rgba(254,243,199,0.5)", stroke: "#fcd34d" },  // amber
+  Utilities:   { fill: "rgba(237,233,254,0.5)", stroke: "#c4b5fd" },  // violet
+  "Port Fees": { fill: "rgba(207,250,254,0.5)", stroke: "#67e8f9" },  // cyan
+  Others:      { fill: "rgba(243,244,246,0.5)", stroke: "#d1d5db" },  // gray
 }
 
 const formatCurrency = (amount: number) =>
   `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
 
 const overviewConfig: ChartConfig = {
-  sales:    { label: "Sales",    color: "#2563eb" },
-  expenses: { label: "Expenses", color: "#dc2626" },
+  sales:    { label: "Sales",    color: "#67e8f9" },  // cyan-300
+  expenses: { label: "Expenses", color: "#fda4af" },  // rose-300
 }
 
 const depositsConfig: ChartConfig = {
-  cash:  { label: "Cash",  color: "#059669" },
-  check: { label: "Check", color: "#7c3aed" },
-  gcash: { label: "GCash", color: "#2563eb" },
+  cash:  { label: "Cash",  color: "#6ee7b7" },  // emerald-300
+  check: { label: "Check", color: "#c4b5fd" },  // violet-300
+  gcash: { label: "GCash", color: "#7dd3fc" },  // sky-300
 }
 
 function localDateString(date: Date): string {
@@ -359,7 +360,8 @@ export function AdminDashboard() {
       .map(([id, amount]) => ({
         branch: branchNames[+id] || `Branch ${id}`,
         amount,
-        fill: branchColors[+id] || "#6b7280",
+        fill: branchBarColors[+id]?.fill || "rgba(243,244,246,0.5)",
+        stroke: branchBarColors[+id]?.stroke || "#d1d5db",
       }))
       .sort((a, b) => b.amount - a.amount)
   }, [dateRangeOption, rangeSalesByBranch, dailySales, includesOpenShift])
@@ -378,7 +380,8 @@ export function AdminDashboard() {
     return Object.entries(map)
       .map(([type, amount]) => {
         const label = expenseTypeNames[+type] || `Type ${type}`
-        return { type: label, amount, fill: expenseColors[label] || "#6b7280" }
+        const colors = expenseBarColors[label] || { fill: "rgba(243,244,246,0.5)", stroke: "#d1d5db" }
+        return { type: label, amount, fill: colors.fill, stroke: colors.stroke }
       })
       .sort((a, b) => b.amount - a.amount)
   }, [dateRangeOption, rangeExpensesByType, dailyExpenses, includesOpenShift])
@@ -675,7 +678,7 @@ export function AdminDashboard() {
               />
               <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={28}>
                 {salesByBranch.map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} />
+                  <Cell key={i} fill={entry.fill} stroke={entry.stroke} strokeWidth={1.5} />
                 ))}
               </Bar>
             </BarChart>
@@ -721,7 +724,7 @@ export function AdminDashboard() {
               />
               <Bar dataKey="amount" radius={[0, 4, 4, 0]} maxBarSize={28}>
                 {expensesByType.map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} />
+                  <Cell key={i} fill={entry.fill} stroke={entry.stroke} strokeWidth={1.5} />
                 ))}
               </Bar>
             </BarChart>
@@ -741,12 +744,12 @@ export function AdminDashboard() {
             <AreaChart data={overviewData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="gradSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#67e8f9" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#67e8f9" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gradExpenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#dc2626" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#dc2626" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#fda4af" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#fda4af" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -775,7 +778,7 @@ export function AdminDashboard() {
               <Area
                 type="monotone"
                 dataKey="sales"
-                stroke="#2563eb"
+                stroke="#67e8f9"
                 strokeWidth={2}
                 fill="url(#gradSales)"
                 dot={false}
@@ -783,7 +786,7 @@ export function AdminDashboard() {
               <Area
                 type="monotone"
                 dataKey="expenses"
-                stroke="#dc2626"
+                stroke="#fda4af"
                 strokeWidth={2}
                 fill="url(#gradExpenses)"
                 dot={false}
@@ -823,9 +826,9 @@ export function AdminDashboard() {
                 }
               />
               <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="cash" stackId="a" fill="var(--color-cash)" maxBarSize={40} />
-              <Bar dataKey="check" stackId="a" fill="var(--color-check)" maxBarSize={40} />
-              <Bar dataKey="gcash" stackId="a" fill="var(--color-gcash)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="cash" stackId="a" fill="rgba(209,250,229,0.5)" stroke="#6ee7b7" strokeWidth={1} maxBarSize={40} />
+              <Bar dataKey="check" stackId="a" fill="rgba(237,233,254,0.5)" stroke="#c4b5fd" strokeWidth={1} maxBarSize={40} />
+              <Bar dataKey="gcash" stackId="a" fill="rgba(224,242,254,0.5)" stroke="#7dd3fc" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={40} />
             </BarChart>
           </ChartContainer>
         </ChartCard>
