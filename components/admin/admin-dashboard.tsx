@@ -21,6 +21,9 @@ import {
   ChartLegendContent,
 } from "@/components/ui/chart"
 import type { ChartConfig } from "@/components/ui/chart"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { CaretDown } from "@phosphor-icons/react"
 
 interface Transaction {
   id: number
@@ -101,17 +104,54 @@ function localDateString(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-function buildDateRange(days: number) {
+type DateRangeOption = "today" | "mtd" | "last_month" | "year" | "custom"
+
+function buildDayRange(from: string, to: string) {
   const result: { date: string; dateLabel: string }[] = []
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
+  const cur = new Date(from + "T00:00:00")
+  const end = new Date(to + "T00:00:00")
+  while (cur <= end) {
     result.push({
-      date: localDateString(d),
-      dateLabel: d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }),
+      date: localDateString(cur),
+      dateLabel: cur.toLocaleDateString("en-PH", { month: "short", day: "numeric" }),
     })
+    cur.setDate(cur.getDate() + 1)
   }
   return result
+}
+
+function buildMonthRange(from: string, to: string) {
+  const result: { date: string; dateLabel: string }[] = []
+  const end = new Date(to + "T00:00:00")
+  const cur = new Date(new Date(from + "T00:00:00").getFullYear(), new Date(from + "T00:00:00").getMonth(), 1)
+  while (cur <= end) {
+    result.push({
+      date: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`,
+      dateLabel: cur.toLocaleDateString("en-PH", { month: "short" }),
+    })
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  return result
+}
+
+function computeRange(opt: DateRangeOption, customFrom: string, customTo: string) {
+  const today = localDateString(new Date())
+  const now = new Date()
+  switch (opt) {
+    case "today":
+      return { from: today, to: today }
+    case "mtd":
+      return { from: localDateString(new Date(now.getFullYear(), now.getMonth(), 1)), to: today }
+    case "last_month": {
+      const f = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const t = new Date(now.getFullYear(), now.getMonth(), 0)
+      return { from: localDateString(f), to: localDateString(t) }
+    }
+    case "year":
+      return { from: `${now.getFullYear()}-01-01`, to: today }
+    case "custom":
+      return { from: customFrom, to: customTo }
+  }
 }
 
 const branches = [
@@ -127,6 +167,9 @@ export function AdminDashboard() {
   const { currentShiftId, hasOpenShift } = useShift()
 
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null)
+  const [dateRangeOption, setDateRangeOption] = useState<DateRangeOption>("mtd")
+  const [customFrom, setCustomFrom] = useState("")
+  const [customTo, setCustomTo] = useState("")
 
   const [dailyTransactions, setDailyTransactions] = useState<Transaction[]>([])
   const [dailyLoading, setDailyLoading] = useState(true)
@@ -154,18 +197,20 @@ export function AdminDashboard() {
     fetchDaily()
   }, [currentShiftId])
 
-  // Fetch 7-day overview via RPCs
+  // Fetch overview via RPCs
   const fetchOverview = useCallback(async () => {
+    const range = computeRange(dateRangeOption, customFrom, customTo)
+    if (!range.from || !range.to) return
     setOverviewLoading(true)
     const supabase = createClient()
     const [{ data: salesExpenses }, { data: deposits }] = await Promise.all([
-      supabase.rpc("get_sales_overview", { p_days: 7, p_branch_id: selectedBranch }),
-      supabase.rpc("get_deposits_overview", { p_days: 7, p_branch_id: selectedBranch }),
+      supabase.rpc("get_sales_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
+      supabase.rpc("get_deposits_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
     ])
     if (salesExpenses) setSalesExpensesOverview(salesExpenses)
     if (deposits) setDepositsOverview(deposits)
     setOverviewLoading(false)
-  }, [selectedBranch])
+  }, [selectedBranch, dateRangeOption, customFrom, customTo])
 
   useEffect(() => { fetchOverview() }, [fetchOverview])
 
@@ -249,22 +294,52 @@ export function AdminDashboard() {
       .sort((a, b) => b.amount - a.amount)
   }, [dailyExpenses])
 
-  // 7-day sales & expenses trend
+  const activeRange = useMemo(
+    () => computeRange(dateRangeOption, customFrom, customTo),
+    [dateRangeOption, customFrom, customTo]
+  )
+
+  const groupBy = useMemo((): "day" | "month" => {
+    if (!activeRange.from || !activeRange.to) return "day"
+    const diff =
+      new Date(activeRange.to + "T00:00:00").getTime() -
+      new Date(activeRange.from + "T00:00:00").getTime()
+    return Math.ceil(diff / 86400000) + 1 > 31 ? "month" : "day"
+  }, [activeRange])
+
+  const rangeLabel = useMemo(() => {
+    switch (dateRangeOption) {
+      case "today": return "Today"
+      case "mtd": return "Month to Date"
+      case "last_month": return "Last Month"
+      case "year": return `Year ${new Date().getFullYear()}`
+      case "custom":
+        if (!customFrom || !customTo) return "Custom Range"
+        return `${new Date(customFrom + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })} – ${new Date(customTo + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`
+    }
+  }, [dateRangeOption, customFrom, customTo])
+
+  // Sales & expenses overview
   const overviewData = useMemo(() => {
-    const days = buildDateRange(7).map((d) => ({ ...d, sales: 0, expenses: 0 }))
+    if (!activeRange.from || !activeRange.to) return []
+    const days = (groupBy === "month"
+      ? buildMonthRange(activeRange.from, activeRange.to)
+      : buildDayRange(activeRange.from, activeRange.to)
+    ).map((d) => ({ ...d, sales: 0, expenses: 0 }))
 
     salesExpensesOverview.forEach((item) => {
-      const entry = days.find((d) => d.date === item.date)
+      const key = groupBy === "month" ? item.date.slice(0, 7) : item.date
+      const entry = days.find((d) => d.date === key)
       if (entry) {
         entry.sales += Number(item.total_sales)
         entry.expenses += Number(item.total_expenses)
       }
     })
 
-    // Include current open shift in today's totals (not yet in shift_totals)
     if (hasOpenShift) {
       const today = localDateString(new Date())
-      const todayEntry = days.find((d) => d.date === today)
+      const todayKey = groupBy === "month" ? today.slice(0, 7) : today
+      const todayEntry = days.find((d) => d.date === todayKey)
       if (todayEntry) {
         todayEntry.sales += totalDailySales
         todayEntry.expenses += totalDailyExpenses
@@ -272,14 +347,19 @@ export function AdminDashboard() {
     }
 
     return days
-  }, [salesExpensesOverview, totalDailySales, totalDailyExpenses, hasOpenShift])
+  }, [salesExpensesOverview, activeRange, groupBy, hasOpenShift, totalDailySales, totalDailyExpenses])
 
-  // 7-day deposits trend
+  // Deposits overview
   const depositsData = useMemo(() => {
-    const days = buildDateRange(7).map((d) => ({ ...d, cash: 0, check: 0, gcash: 0 }))
+    if (!activeRange.from || !activeRange.to) return []
+    const days = (groupBy === "month"
+      ? buildMonthRange(activeRange.from, activeRange.to)
+      : buildDayRange(activeRange.from, activeRange.to)
+    ).map((d) => ({ ...d, cash: 0, check: 0, gcash: 0 }))
 
     depositsOverview.forEach((item) => {
-      const entry = days.find((d) => d.date === item.date)
+      const key = groupBy === "month" ? item.date.slice(0, 7) : item.date
+      const entry = days.find((d) => d.date === key)
       if (entry) {
         const amt = Number(item.total_amount)
         if (item.deposit_type === 1) entry.cash += amt
@@ -289,13 +369,12 @@ export function AdminDashboard() {
     })
 
     return days
-  }, [depositsOverview])
+  }, [depositsOverview, activeRange, groupBy])
 
-  const todayDeposits = useMemo(() => {
-    const today = localDateString(new Date())
-    const entry = depositsData.find((d) => d.date === today)
-    return entry ? entry.cash + entry.check + entry.gcash : 0
-  }, [depositsData])
+  const totalDeposits = useMemo(
+    () => depositsData.reduce((s, d) => s + d.cash + d.check + d.gcash, 0),
+    [depositsData]
+  )
 
   return (
     <div className="space-y-8">
@@ -322,32 +401,99 @@ export function AdminDashboard() {
         </span>
       </div>
 
-      {/* Branch filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0">Branch:</span>
-        <button
-          onClick={() => setSelectedBranch(null)}
-          className={`px-3 py-1 text-xs font-mono border transition-colors ${
-            selectedBranch === null
-              ? "border-black bg-black text-white"
-              : "border-gray-200 text-gray-500 hover:border-gray-400"
-          }`}
-        >
-          All
-        </button>
-        {branches.map((b) => (
+      {/* Filters */}
+      <div className="space-y-3">
+        {/* Branch filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0 w-16">Branch:</span>
           <button
-            key={b.id}
-            onClick={() => setSelectedBranch(selectedBranch === b.id ? null : b.id)}
+            onClick={() => setSelectedBranch(null)}
             className={`px-3 py-1 text-xs font-mono border transition-colors ${
-              selectedBranch === b.id
+              selectedBranch === null
                 ? "border-black bg-black text-white"
                 : "border-gray-200 text-gray-500 hover:border-gray-400"
             }`}
           >
-            {b.name}
+            All
           </button>
-        ))}
+          {branches.map((b) => (
+            <button
+              key={b.id}
+              onClick={() => setSelectedBranch(selectedBranch === b.id ? null : b.id)}
+              className={`px-3 py-1 text-xs font-mono border transition-colors ${
+                selectedBranch === b.id
+                  ? "border-black bg-black text-white"
+                  : "border-gray-200 text-gray-500 hover:border-gray-400"
+              }`}
+            >
+              {b.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Date range filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0 w-16">Period:</span>
+          {(["today", "mtd", "last_month", "year", "custom"] as DateRangeOption[]).map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setDateRangeOption(opt)}
+              className={`px-3 py-1 text-xs font-mono border transition-colors ${
+                dateRangeOption === opt
+                  ? "border-black bg-black text-white"
+                  : "border-gray-200 text-gray-500 hover:border-gray-400"
+              }`}
+            >
+              {opt === "today" ? "Today"
+                : opt === "mtd" ? "MTD"
+                : opt === "last_month" ? "Last Month"
+                : opt === "year" ? `Year ${new Date().getFullYear()}`
+                : "Custom"}
+            </button>
+          ))}
+
+          {/* Custom date pickers */}
+          {dateRangeOption === "custom" && (
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="h-7 px-3 text-xs font-mono border border-gray-200 flex items-center gap-1.5 hover:border-gray-400 transition-colors">
+                    {customFrom
+                      ? new Date(customFrom + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+                      : "From"}
+                    <CaretDown className="w-3 h-3 text-gray-400" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customFrom ? new Date(customFrom + "T00:00:00") : undefined}
+                    onSelect={(date) => date && setCustomFrom(localDateString(date))}
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="text-xs text-gray-400">–</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="h-7 px-3 text-xs font-mono border border-gray-200 flex items-center gap-1.5 hover:border-gray-400 transition-colors">
+                    {customTo
+                      ? new Date(customTo + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+                      : "To"}
+                    <CaretDown className="w-3 h-3 text-gray-400" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customTo ? new Date(customTo + "T00:00:00") : undefined}
+                    onSelect={(date) => date && setCustomTo(localDateString(date))}
+                    disabled={(date) => customFrom ? date < new Date(customFrom + "T00:00:00") : false}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* KPI cards */}
@@ -367,8 +513,8 @@ export function AdminDashboard() {
           color="red"
         />
         <StatCard
-          label="Today's Deposits"
-          value={formatCurrency(todayDeposits)}
+          label={`${rangeLabel} Deposits`}
+          value={formatCurrency(totalDeposits)}
           sub="cash + check + gcash"
           loading={overviewLoading}
           color="green"
@@ -480,8 +626,8 @@ export function AdminDashboard() {
       {/* 7-day overview charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard
-          title="Sales & Expenses — Last 7 Days"
-          subtitle="Closed shifts + current open shift"
+          title={`Sales & Expenses — ${rangeLabel}`}
+          subtitle={groupBy === "month" ? "Grouped by month" : "Grouped by day"}
           loading={overviewLoading}
           empty={false}
         >
@@ -541,8 +687,8 @@ export function AdminDashboard() {
         </ChartCard>
 
         <ChartCard
-          title="Deposits — Last 7 Days"
-          subtitle="By type: cash, check, gcash"
+          title={`Deposits — ${rangeLabel}`}
+          subtitle="Cash · Check · GCash"
           loading={overviewLoading}
           empty={false}
         >
