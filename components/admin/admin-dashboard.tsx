@@ -94,22 +94,39 @@ const depositsConfig: ChartConfig = {
   gcash: { label: "GCash", color: "#2563eb" },
 }
 
+function localDateString(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
 function buildDateRange(days: number) {
   const result: { date: string; dateLabel: string }[] = []
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    d.setHours(0, 0, 0, 0)
     result.push({
-      date: d.toISOString().split("T")[0],
+      date: localDateString(d),
       dateLabel: d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }),
     })
   }
   return result
 }
 
+const branches = [
+  { id: 1, name: "Hardware" },
+  { id: 2, name: "Pawa Gas" },
+  { id: 3, name: "Matnog Gas" },
+  { id: 4, name: "Gotis Hotel" },
+  { id: 5, name: "Rental" },
+  { id: 6, name: "Boarders" },
+]
+
 export function AdminDashboard() {
   const { currentShiftId, hasOpenShift } = useShift()
+
+  const [selectedBranch, setSelectedBranch] = useState<number | null>(null)
 
   const [dailyTransactions, setDailyTransactions] = useState<Transaction[]>([])
   const [dailyLoading, setDailyLoading] = useState(true)
@@ -139,15 +156,16 @@ export function AdminDashboard() {
 
   // Fetch 7-day overview via RPCs
   const fetchOverview = useCallback(async () => {
+    setOverviewLoading(true)
     const supabase = createClient()
     const [{ data: salesExpenses }, { data: deposits }] = await Promise.all([
-      supabase.rpc("get_sales_overview", { p_days: 7 }),
-      supabase.rpc("get_deposits_overview", { p_days: 7 }),
+      supabase.rpc("get_sales_overview", { p_days: 7, p_branch_id: selectedBranch }),
+      supabase.rpc("get_deposits_overview", { p_days: 7, p_branch_id: selectedBranch }),
     ])
     if (salesExpenses) setSalesExpensesOverview(salesExpenses)
     if (deposits) setDepositsOverview(deposits)
     setOverviewLoading(false)
-  }, [])
+  }, [selectedBranch])
 
   useEffect(() => { fetchOverview() }, [fetchOverview])
 
@@ -193,8 +211,15 @@ export function AdminDashboard() {
     }
   }, [fetchOverview])
 
-  const dailySales = useMemo(() => dailyTransactions.filter((t) => t.transaction_type === 1), [dailyTransactions])
-  const dailyExpenses = useMemo(() => dailyTransactions.filter((t) => t.transaction_type === 2), [dailyTransactions])
+  const filteredDaily = useMemo(() =>
+    selectedBranch === null
+      ? dailyTransactions
+      : dailyTransactions.filter((t) => t.branch_id === selectedBranch),
+    [dailyTransactions, selectedBranch]
+  )
+
+  const dailySales = useMemo(() => filteredDaily.filter((t) => t.transaction_type === 1), [filteredDaily])
+  const dailyExpenses = useMemo(() => filteredDaily.filter((t) => t.transaction_type === 2), [filteredDaily])
 
   const totalDailySales = useMemo(() => dailySales.reduce((s, t) => s + t.amount, 0), [dailySales])
   const totalDailyExpenses = useMemo(() => dailyExpenses.reduce((s, t) => s + t.amount, 0), [dailyExpenses])
@@ -238,7 +263,7 @@ export function AdminDashboard() {
 
     // Include current open shift in today's totals (not yet in shift_totals)
     if (hasOpenShift) {
-      const today = new Date().toISOString().split("T")[0]
+      const today = localDateString(new Date())
       const todayEntry = days.find((d) => d.date === today)
       if (todayEntry) {
         todayEntry.sales += totalDailySales
@@ -267,7 +292,7 @@ export function AdminDashboard() {
   }, [depositsOverview])
 
   const todayDeposits = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0]
+    const today = localDateString(new Date())
     const entry = depositsData.find((d) => d.date === today)
     return entry ? entry.cash + entry.check + entry.gcash : 0
   }, [depositsData])
@@ -295,6 +320,34 @@ export function AdminDashboard() {
             day: "numeric",
           })}
         </span>
+      </div>
+
+      {/* Branch filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0">Branch:</span>
+        <button
+          onClick={() => setSelectedBranch(null)}
+          className={`px-3 py-1 text-xs font-mono border transition-colors ${
+            selectedBranch === null
+              ? "border-black bg-black text-white"
+              : "border-gray-200 text-gray-500 hover:border-gray-400"
+          }`}
+        >
+          All
+        </button>
+        {branches.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => setSelectedBranch(selectedBranch === b.id ? null : b.id)}
+            className={`px-3 py-1 text-xs font-mono border transition-colors ${
+              selectedBranch === b.id
+                ? "border-black bg-black text-white"
+                : "border-gray-200 text-gray-500 hover:border-gray-400"
+            }`}
+          >
+            {b.name}
+          </button>
+        ))}
       </div>
 
       {/* KPI cards */}
