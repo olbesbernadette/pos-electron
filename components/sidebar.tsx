@@ -33,12 +33,14 @@ const bodegaItems = [
 interface SidebarItem {
   name: string
   slug: string
+  root?: boolean
   subItems?: { name: string; slug: string }[]
 }
 
 const adminItems: SidebarItem[] = [
-  { 
-    name: "Daily", 
+  { name: "Dashboard", slug: "", root: true },
+  {
+    name: "Daily",
     slug: "daily",
     subItems: [
       { name: "Sales", slug: "daily-sales" },
@@ -106,7 +108,7 @@ export function Sidebar({ basePath = "/sales" }: SidebarProps) {
   const menuItems = (
     <>
       {sidebarItems.map((item) => {
-        const href = `${basePath}/${item.slug}`
+        const href = item.root ? basePath : `${basePath}/${item.slug}`
         const isActive = pathname === href
         const hasSubItems = 'subItems' in item && item.subItems && item.subItems.length > 0
         const isSubItemActive = hasSubItems && item.subItems?.some(sub => pathname === `${basePath}/${sub.slug}`)

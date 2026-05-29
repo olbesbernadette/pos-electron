@@ -643,7 +643,7 @@ export function AdminDashboard() {
           empty={salesByBranch.length === 0}
           emptyMessage={dateRangeOption === "today" ? (currentShiftId ? "No sales in current shift" : "No open shift") : "No sales data for this period"}
         >
-          <ChartContainer config={{ amount: { label: "Sales" } }} className="h-[240px]">
+          <ChartContainer config={{ amount: { label: "Sales" } }} className="h-full w-full">
             <BarChart
               data={salesByBranch}
               layout="vertical"
@@ -689,7 +689,7 @@ export function AdminDashboard() {
           empty={expensesByType.length === 0}
           emptyMessage={dateRangeOption === "today" ? (currentShiftId ? "No expenses in current shift" : "No open shift") : "No expense data for this period"}
         >
-          <ChartContainer config={{ amount: { label: "Expenses" } }} className="h-[240px]">
+          <ChartContainer config={{ amount: { label: "Expenses" } }} className="h-full w-full">
             <BarChart
               data={expensesByType}
               layout="vertical"
@@ -737,7 +737,7 @@ export function AdminDashboard() {
           loading={overviewLoading}
           empty={false}
         >
-          <ChartContainer config={overviewConfig} className="h-[240px]">
+          <ChartContainer config={overviewConfig} className="h-full w-full">
             <AreaChart data={overviewData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="gradSales" x1="0" y1="0" x2="0" y2="1">
@@ -798,7 +798,7 @@ export function AdminDashboard() {
           loading={overviewLoading}
           empty={false}
         >
-          <ChartContainer config={depositsConfig} className="h-[240px]">
+          <ChartContainer config={depositsConfig} className="h-full w-full">
             <BarChart data={depositsData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis
@@ -884,22 +884,24 @@ function ChartCard({
   children?: React.ReactNode
 }) {
   return (
-    <div className="border border-gray-200 p-6 space-y-4">
-      <div>
+    <div className="border border-gray-200 p-6 flex flex-col gap-4">
+      <div className="shrink-0">
         <h3 className="text-sm font-medium tracking-wide">{title}</h3>
         <p className="text-xs font-mono text-gray-400 mt-0.5">{subtitle}</p>
       </div>
-      {loading ? (
-        <div className="h-[240px] flex items-center justify-center">
-          <p className="text-xs font-mono text-gray-400 tracking-wider">Loading...</p>
-        </div>
-      ) : empty ? (
-        <div className="h-[240px] flex items-center justify-center">
-          <p className="text-xs font-mono text-gray-400 tracking-wider">{emptyMessage}</p>
-        </div>
-      ) : (
-        children
-      )}
+      <div className="flex-1 min-h-[200px] sm:min-h-[260px]">
+        {loading ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-xs font-mono text-gray-400 tracking-wider">Loading...</p>
+          </div>
+        ) : empty ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-xs font-mono text-gray-400 tracking-wider">{emptyMessage}</p>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
     </div>
   )
 }
