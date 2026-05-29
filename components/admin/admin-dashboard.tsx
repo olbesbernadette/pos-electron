@@ -215,12 +215,12 @@ export function AdminDashboard() {
 
     const shiftTotalsQ = selectedBranch !== null
       ? supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, amount")
-          .filter("created_at::date", "gte", range.from)
-          .filter("created_at::date", "lte", range.to)
+          .gte("created_at", range.from)
+          .lt("created_at", nextDay(range.to))
           .eq("branch_id", selectedBranch)
       : supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, amount")
-          .filter("created_at::date", "gte", range.from)
-          .filter("created_at::date", "lte", range.to)
+          .gte("created_at", range.from)
+          .lt("created_at", nextDay(range.to))
 
     const [
       { data: salesExpenses, error: salesErr },
