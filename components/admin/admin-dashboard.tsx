@@ -188,6 +188,9 @@ export function AdminDashboard() {
   const [rangeSalesByBranch, setRangeSalesByBranch] = useState<{ branch_id: number; total_amount: number }[]>([])
   const [rangeExpensesByType, setRangeExpensesByType] = useState<{ payment_type: number; total_amount: number }[]>([])
 
+  const [undepositedChecksTotal, setUndepositedChecksTotal] = useState(0)
+  const [undepositedChecksCount, setUndepositedChecksCount] = useState(0)
+
   // Fetch current shift transactions
   useEffect(() => {
     const fetchDaily = async () => {
@@ -223,19 +226,26 @@ export function AdminDashboard() {
           .gte("created_at", range.from)
           .lt("created_at", nextDay(range.to))
 
+    const checksQ = selectedBranch !== null
+      ? supabase.from("shift_transactions").select("amount").eq("payment_type", 3).eq("transaction_type", 1).neq("status", 2).eq("branch_id", selectedBranch)
+      : supabase.from("shift_transactions").select("amount").eq("payment_type", 3).eq("transaction_type", 1).neq("status", 2)
+
     const [
       { data: salesExpenses, error: salesErr },
       { data: deposits, error: depositsErr },
       { data: shiftTotalsRaw, error: shiftTotalsErr },
+      { data: checksRaw, error: checksErr },
     ] = await Promise.all([
       supabase.rpc("get_sales_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
       supabase.rpc("get_deposits_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
       shiftTotalsQ,
+      checksQ,
     ])
 
     if (salesErr) console.error("get_sales_overview:", salesErr.message)
     if (depositsErr) console.error("get_deposits_overview:", depositsErr.message)
     if (shiftTotalsErr) console.error("shift_totals:", shiftTotalsErr.message)
+    if (checksErr) console.error("undeposited checks:", checksErr.message)
 
     setSalesExpensesOverview(salesExpenses ?? [])
     setDepositsOverview(deposits ?? [])
@@ -252,6 +262,10 @@ export function AdminDashboard() {
       expMap[r.payment_type] = (expMap[r.payment_type] || 0) + Number(r.total_amount)
     })
     setRangeExpensesByType(Object.entries(expMap).map(([type, total_amount]) => ({ payment_type: +type, total_amount })))
+
+    const checks = checksRaw ?? []
+    setUndepositedChecksTotal(checks.reduce((s, r) => s + Number(r.amount), 0))
+    setUndepositedChecksCount(checks.length)
 
     setOverviewLoading(false)
   }, [selectedBranch, dateRangeOption, customFrom, customTo])
@@ -279,7 +293,7 @@ export function AdminDashboard() {
     return () => { supabase.removeChannel(channel) }
   }, [currentShiftId])
 
-  // Realtime: refetch RPCs when a deposit or shift close happens
+  // Realtime: refetch RPCs when a deposit, shift close, or check deposit happens
   useEffect(() => {
     const supabase = createClient()
     const depositsChannel = supabase
@@ -294,9 +308,16 @@ export function AdminDashboard() {
         fetchOverview()
       })
       .subscribe()
+    const checksChannel = supabase
+      .channel("admin-dashboard-check-deposits")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "shift_transactions" }, () => {
+        fetchOverview()
+      })
+      .subscribe()
     return () => {
       supabase.removeChannel(depositsChannel)
       supabase.removeChannel(totalsChannel)
+      supabase.removeChannel(checksChannel)
     }
   }, [fetchOverview])
 
@@ -578,7 +599,7 @@ export function AdminDashboard() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           label={`${rangeLabel} Sales`}
           value={formatCurrency(totalRangeSales)}
@@ -606,6 +627,13 @@ export function AdminDashboard() {
           sub={dateRangeOption === "today" ? (hasOpenShift ? "shift open" : "no open shift") : rangeLabel}
           loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           color={totalRangeSales - totalRangeExpenses >= 0 ? "green" : "red"}
+        />
+        <StatCard
+          label="Undeposited Checks"
+          value={formatCurrency(undepositedChecksTotal)}
+          sub={`${undepositedChecksCount} check${undepositedChecksCount !== 1 ? "s" : ""} outstanding`}
+          loading={overviewLoading}
+          color="amber"
         />
       </div>
 
@@ -782,13 +810,7 @@ export function AdminDashboard() {
                 axisLine={false}
                 tickLine={false}
               />
-              <YAxis
-                tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
+              <YAxis hide />
               <ChartTooltip
                 content={
                   <ChartTooltipContent
@@ -827,13 +849,14 @@ function StatCard({
   value: string
   sub: string
   loading: boolean
-  color: "blue" | "red" | "green" | "gray"
+  color: "blue" | "red" | "green" | "gray" | "amber"
 }) {
   const colorClass = {
     blue:  "text-blue-600",
     red:   "text-red-600",
     green: "text-emerald-600",
     gray:  "text-gray-600",
+    amber: "text-amber-600",
   }[color]
 
   return (
