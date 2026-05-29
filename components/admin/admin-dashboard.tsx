@@ -214,11 +214,11 @@ export function AdminDashboard() {
     const supabase = createClient()
 
     const shiftTotalsQ = selectedBranch !== null
-      ? supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, amount")
+      ? supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, total_amount")
           .gte("created_at", range.from)
           .lt("created_at", nextDay(range.to))
           .eq("branch_id", selectedBranch)
-      : supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, amount")
+      : supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, total_amount")
           .gte("created_at", range.from)
           .lt("created_at", nextDay(range.to))
 
@@ -242,13 +242,13 @@ export function AdminDashboard() {
     const raw = shiftTotalsRaw ?? []
     const salesMap: Record<number, number> = {}
     raw.filter((r) => r.transaction_type === 1).forEach((r) => {
-      salesMap[r.branch_id] = (salesMap[r.branch_id] || 0) + Number(r.amount)
+      salesMap[r.branch_id] = (salesMap[r.branch_id] || 0) + Number(r.total_amount)
     })
     setRangeSalesByBranch(Object.entries(salesMap).map(([id, total_amount]) => ({ branch_id: +id, total_amount })))
 
     const expMap: Record<number, number> = {}
     raw.filter((r) => r.transaction_type === 2).forEach((r) => {
-      expMap[r.payment_type] = (expMap[r.payment_type] || 0) + Number(r.amount)
+      expMap[r.payment_type] = (expMap[r.payment_type] || 0) + Number(r.total_amount)
     })
     setRangeExpensesByType(Object.entries(expMap).map(([type, total_amount]) => ({ payment_type: +type, total_amount })))
 
