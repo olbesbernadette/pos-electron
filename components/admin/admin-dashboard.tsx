@@ -12,7 +12,6 @@ import {
   Area,
   CartesianGrid,
   Cell,
-  LabelList,
 } from "recharts"
 import {
   ChartContainer,
@@ -454,7 +453,7 @@ export function AdminDashboard() {
     const days = (groupBy === "month"
       ? buildMonthRange(activeRange.from, activeRange.to)
       : buildDayRange(activeRange.from, activeRange.to)
-    ).map((d) => ({ ...d, cash: 0, check: 0, gcash: 0, total: 0 }))
+    ).map((d) => ({ ...d, cash: 0, check: 0, gcash: 0 }))
 
     depositsOverview.forEach((item) => {
       const key = groupBy === "month" ? item.date.slice(0, 7) : item.date
@@ -467,8 +466,6 @@ export function AdminDashboard() {
         else if (dtype === 3) entry.gcash += amt
       }
     })
-
-    days.forEach((d) => { d.total = d.cash + d.check + d.gcash })
 
     return days
   }, [depositsOverview, activeRange, groupBy])
@@ -615,18 +612,18 @@ export function AdminDashboard() {
           color="red"
         />
         <StatCard
-          label={`${rangeLabel} Deposits`}
-          value={formatCurrency(totalDeposits)}
-          sub="cash + check + gcash"
-          loading={overviewLoading}
-          color="green"
-        />
-        <StatCard
           label="Net (Sales − Exp)"
           value={formatCurrency(totalRangeSales - totalRangeExpenses)}
           sub={dateRangeOption === "today" ? (hasOpenShift ? "shift open" : "no open shift") : rangeLabel}
           loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           color={totalRangeSales - totalRangeExpenses >= 0 ? "green" : "red"}
+        />
+        <StatCard
+          label={`${rangeLabel} Deposits`}
+          value={formatCurrency(totalDeposits)}
+          sub="cash + check + gcash"
+          loading={overviewLoading}
+          color="green"
         />
         <StatCard
           label="Undeposited Checks"
@@ -802,7 +799,7 @@ export function AdminDashboard() {
           empty={false}
         >
           <ChartContainer config={depositsConfig} className="h-[240px]">
-            <BarChart data={depositsData} margin={{ left: 8, right: 64, top: 4, bottom: 4 }}>
+            <BarChart data={depositsData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis
                 dataKey="dateLabel"
@@ -810,7 +807,13 @@ export function AdminDashboard() {
                 axisLine={false}
                 tickLine={false}
               />
-              <YAxis hide />
+              <YAxis
+                tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
+                tick={{ fontSize: 11, fontFamily: "monospace" }}
+                axisLine={false}
+                tickLine={false}
+                width={40}
+              />
               <ChartTooltip
                 content={
                   <ChartTooltipContent
@@ -822,14 +825,7 @@ export function AdminDashboard() {
               <ChartLegend content={<ChartLegendContent />} />
               <Bar dataKey="cash" stackId="a" fill="var(--color-cash)" maxBarSize={40} />
               <Bar dataKey="check" stackId="a" fill="var(--color-check)" maxBarSize={40} />
-              <Bar dataKey="gcash" stackId="a" fill="var(--color-gcash)" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                <LabelList
-                  valueAccessor={(entry: { total: number }) => entry.total || null}
-                  position="right"
-                  style={{ fontSize: 10, fontFamily: "monospace", fill: "#6b7280" }}
-                  formatter={(v: number) => `₱${(v / 1000).toFixed(1)}k`}
-                />
-              </Bar>
+              <Bar dataKey="gcash" stackId="a" fill="var(--color-gcash)" radius={[4, 4, 0, 0]} maxBarSize={40} />
             </BarChart>
           </ChartContainer>
         </ChartCard>
