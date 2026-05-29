@@ -203,12 +203,17 @@ export function AdminDashboard() {
     if (!range.from || !range.to) return
     setOverviewLoading(true)
     const supabase = createClient()
-    const [{ data: salesExpenses }, { data: deposits }] = await Promise.all([
+    const [
+      { data: salesExpenses, error: salesErr },
+      { data: deposits, error: depositsErr },
+    ] = await Promise.all([
       supabase.rpc("get_sales_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
       supabase.rpc("get_deposits_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
     ])
-    if (salesExpenses) setSalesExpensesOverview(salesExpenses)
-    if (deposits) setDepositsOverview(deposits)
+    if (salesErr) console.error("get_sales_overview:", salesErr.message)
+    if (depositsErr) console.error("get_deposits_overview:", depositsErr.message)
+    setSalesExpensesOverview(salesExpenses ?? [])
+    setDepositsOverview(deposits ?? [])
     setOverviewLoading(false)
   }, [selectedBranch, dateRangeOption, customFrom, customTo])
 
@@ -362,9 +367,10 @@ export function AdminDashboard() {
       const entry = days.find((d) => d.date === key)
       if (entry) {
         const amt = Number(item.total_amount)
-        if (item.deposit_type === 1) entry.cash += amt
-        else if (item.deposit_type === 2) entry.check += amt
-        else if (item.deposit_type === 3) entry.gcash += amt
+        const dtype = Number(item.deposit_type)
+        if (dtype === 1) entry.cash += amt
+        else if (dtype === 2) entry.check += amt
+        else if (dtype === 3) entry.gcash += amt
       }
     })
 
