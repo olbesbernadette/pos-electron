@@ -104,6 +104,12 @@ function localDateString(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
+function nextDay(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00")
+  d.setDate(d.getDate() + 1)
+  return localDateString(d)
+}
+
 type DateRangeOption = "today" | "mtd" | "last_month" | "year" | "custom"
 
 function buildDayRange(from: string, to: string) {
@@ -178,6 +184,9 @@ export function AdminDashboard() {
   const [depositsOverview, setDepositsOverview] = useState<DepositOverviewRow[]>([])
   const [overviewLoading, setOverviewLoading] = useState(true)
 
+  const [rangeSalesByBranch, setRangeSalesByBranch] = useState<{ branch_id: number; total_amount: number }[]>([])
+  const [rangeExpensesByType, setRangeExpensesByType] = useState<{ payment_type: number; total_amount: number }[]>([])
+
   // Fetch current shift transactions
   useEffect(() => {
     const fetchDaily = async () => {
@@ -197,23 +206,52 @@ export function AdminDashboard() {
     fetchDaily()
   }, [currentShiftId])
 
-  // Fetch overview via RPCs
+  // Fetch overview via RPCs + shift_totals for branch/type breakdown
   const fetchOverview = useCallback(async () => {
     const range = computeRange(dateRangeOption, customFrom, customTo)
     if (!range.from || !range.to) return
     setOverviewLoading(true)
     const supabase = createClient()
+
+    const shiftTotalsQ = selectedBranch !== null
+      ? supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, amount")
+          .filter("created_at::date", "gte", range.from)
+          .filter("created_at::date", "lte", range.to)
+          .eq("branch_id", selectedBranch)
+      : supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, amount")
+          .filter("created_at::date", "gte", range.from)
+          .filter("created_at::date", "lte", range.to)
+
     const [
       { data: salesExpenses, error: salesErr },
       { data: deposits, error: depositsErr },
+      { data: shiftTotalsRaw, error: shiftTotalsErr },
     ] = await Promise.all([
       supabase.rpc("get_sales_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
       supabase.rpc("get_deposits_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
+      shiftTotalsQ,
     ])
+
     if (salesErr) console.error("get_sales_overview:", salesErr.message)
     if (depositsErr) console.error("get_deposits_overview:", depositsErr.message)
+    if (shiftTotalsErr) console.error("shift_totals:", shiftTotalsErr.message)
+
     setSalesExpensesOverview(salesExpenses ?? [])
     setDepositsOverview(deposits ?? [])
+
+    const raw = shiftTotalsRaw ?? []
+    const salesMap: Record<number, number> = {}
+    raw.filter((r) => r.transaction_type === 1).forEach((r) => {
+      salesMap[r.branch_id] = (salesMap[r.branch_id] || 0) + Number(r.amount)
+    })
+    setRangeSalesByBranch(Object.entries(salesMap).map(([id, total_amount]) => ({ branch_id: +id, total_amount })))
+
+    const expMap: Record<number, number> = {}
+    raw.filter((r) => r.transaction_type === 2).forEach((r) => {
+      expMap[r.payment_type] = (expMap[r.payment_type] || 0) + Number(r.amount)
+    })
+    setRangeExpensesByType(Object.entries(expMap).map(([type, total_amount]) => ({ payment_type: +type, total_amount })))
+
     setOverviewLoading(false)
   }, [selectedBranch, dateRangeOption, customFrom, customTo])
 
@@ -274,10 +312,28 @@ export function AdminDashboard() {
   const totalDailySales = useMemo(() => dailySales.reduce((s, t) => s + t.amount, 0), [dailySales])
   const totalDailyExpenses = useMemo(() => dailyExpenses.reduce((s, t) => s + t.amount, 0), [dailyExpenses])
 
-  // Daily sales by branch (horizontal bar)
+  const activeRange = useMemo(
+    () => computeRange(dateRangeOption, customFrom, customTo),
+    [dateRangeOption, customFrom, customTo]
+  )
+
+  const includesOpenShift = useMemo(() => {
+    if (!hasOpenShift || !activeRange.from || !activeRange.to) return false
+    const today = localDateString(new Date())
+    return today >= activeRange.from && today <= activeRange.to
+  }, [hasOpenShift, activeRange])
+
+  // Sales by branch — range-aware
   const salesByBranch = useMemo(() => {
     const map: Record<number, number> = {}
-    dailySales.forEach((t) => { map[t.branch_id] = (map[t.branch_id] || 0) + t.amount })
+    if (dateRangeOption === "today") {
+      dailySales.forEach((t) => { map[t.branch_id] = (map[t.branch_id] || 0) + t.amount })
+    } else {
+      rangeSalesByBranch.forEach((r) => { map[r.branch_id] = (map[r.branch_id] || 0) + r.total_amount })
+      if (includesOpenShift) {
+        dailySales.forEach((t) => { map[t.branch_id] = (map[t.branch_id] || 0) + t.amount })
+      }
+    }
     return Object.entries(map)
       .map(([id, amount]) => ({
         branch: branchNames[+id] || `Branch ${id}`,
@@ -285,24 +341,40 @@ export function AdminDashboard() {
         fill: branchColors[+id] || "#6b7280",
       }))
       .sort((a, b) => b.amount - a.amount)
-  }, [dailySales])
+  }, [dateRangeOption, rangeSalesByBranch, dailySales, includesOpenShift])
 
-  // Daily expenses by type (horizontal bar)
+  // Expenses by type — range-aware
   const expensesByType = useMemo(() => {
     const map: Record<number, number> = {}
-    dailyExpenses.forEach((t) => { map[t.payment_type] = (map[t.payment_type] || 0) + t.amount })
+    if (dateRangeOption === "today") {
+      dailyExpenses.forEach((t) => { map[t.payment_type] = (map[t.payment_type] || 0) + t.amount })
+    } else {
+      rangeExpensesByType.forEach((r) => { map[r.payment_type] = (map[r.payment_type] || 0) + r.total_amount })
+      if (includesOpenShift) {
+        dailyExpenses.forEach((t) => { map[t.payment_type] = (map[t.payment_type] || 0) + t.amount })
+      }
+    }
     return Object.entries(map)
       .map(([type, amount]) => {
         const label = expenseTypeNames[+type] || `Type ${type}`
         return { type: label, amount, fill: expenseColors[label] || "#6b7280" }
       })
       .sort((a, b) => b.amount - a.amount)
-  }, [dailyExpenses])
+  }, [dateRangeOption, rangeExpensesByType, dailyExpenses, includesOpenShift])
 
-  const activeRange = useMemo(
-    () => computeRange(dateRangeOption, customFrom, customTo),
-    [dateRangeOption, customFrom, customTo]
-  )
+  const totalRangeSales = useMemo(() => {
+    if (dateRangeOption === "today") return totalDailySales
+    let total = rangeSalesByBranch.reduce((s, r) => s + r.total_amount, 0)
+    if (includesOpenShift) total += totalDailySales
+    return total
+  }, [dateRangeOption, rangeSalesByBranch, totalDailySales, includesOpenShift])
+
+  const totalRangeExpenses = useMemo(() => {
+    if (dateRangeOption === "today") return totalDailyExpenses
+    let total = rangeExpensesByType.reduce((s, r) => s + r.total_amount, 0)
+    if (includesOpenShift) total += totalDailyExpenses
+    return total
+  }, [dateRangeOption, rangeExpensesByType, totalDailyExpenses, includesOpenShift])
 
   const groupBy = useMemo((): "day" | "month" => {
     if (!activeRange.from || !activeRange.to) return "day"
@@ -505,17 +577,17 @@ export function AdminDashboard() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label="Daily Sales"
-          value={formatCurrency(totalDailySales)}
-          sub={`${dailySales.length} transactions`}
-          loading={dailyLoading}
+          label={`${rangeLabel} Sales`}
+          value={formatCurrency(totalRangeSales)}
+          sub={dateRangeOption === "today" ? `${dailySales.length} transactions` : `closed shifts${includesOpenShift ? " + shift" : ""}`}
+          loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           color="blue"
         />
         <StatCard
-          label="Daily Expenses"
-          value={formatCurrency(totalDailyExpenses)}
-          sub={`${dailyExpenses.length} entries`}
-          loading={dailyLoading}
+          label={`${rangeLabel} Expenses`}
+          value={formatCurrency(totalRangeExpenses)}
+          sub={dateRangeOption === "today" ? `${dailyExpenses.length} entries` : `closed shifts${includesOpenShift ? " + shift" : ""}`}
+          loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           color="red"
         />
         <StatCard
@@ -527,21 +599,21 @@ export function AdminDashboard() {
         />
         <StatCard
           label="Net (Sales − Exp)"
-          value={formatCurrency(totalDailySales - totalDailyExpenses)}
-          sub={hasOpenShift ? "shift open" : "no open shift"}
-          loading={dailyLoading}
-          color={totalDailySales - totalDailyExpenses >= 0 ? "green" : "red"}
+          value={formatCurrency(totalRangeSales - totalRangeExpenses)}
+          sub={dateRangeOption === "today" ? (hasOpenShift ? "shift open" : "no open shift") : rangeLabel}
+          loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
+          color={totalRangeSales - totalRangeExpenses >= 0 ? "green" : "red"}
         />
       </div>
 
-      {/* Daily charts */}
+      {/* Sales & expenses by branch/type */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard
-          title="Daily Sales by Branch"
-          subtitle="Current shift — updates in realtime"
-          loading={dailyLoading}
+          title={`Sales by Branch — ${rangeLabel}`}
+          subtitle={dateRangeOption === "today" ? "Current shift — updates in realtime" : `Closed shifts${includesOpenShift ? " + current shift" : ""}`}
+          loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           empty={salesByBranch.length === 0}
-          emptyMessage={currentShiftId ? "No sales in current shift" : "No open shift"}
+          emptyMessage={dateRangeOption === "today" ? (currentShiftId ? "No sales in current shift" : "No open shift") : "No sales data for this period"}
         >
           <ChartContainer config={{ amount: { label: "Sales" } }} className="h-[240px]">
             <BarChart
@@ -583,11 +655,11 @@ export function AdminDashboard() {
         </ChartCard>
 
         <ChartCard
-          title="Daily Expenses by Type"
-          subtitle="Current shift — updates in realtime"
-          loading={dailyLoading}
+          title={`Expenses by Type — ${rangeLabel}`}
+          subtitle={dateRangeOption === "today" ? "Current shift — updates in realtime" : `Closed shifts${includesOpenShift ? " + current shift" : ""}`}
+          loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
           empty={expensesByType.length === 0}
-          emptyMessage={currentShiftId ? "No expenses in current shift" : "No open shift"}
+          emptyMessage={dateRangeOption === "today" ? (currentShiftId ? "No expenses in current shift" : "No open shift") : "No expense data for this period"}
         >
           <ChartContainer config={{ amount: { label: "Expenses" } }} className="h-[240px]">
             <BarChart
