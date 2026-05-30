@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client"
 
 interface ReleaseItem {
   id: string
+  itemId: number
   code: string
   product: string
   unit: string
@@ -24,13 +25,13 @@ interface InventoryItem {
 }
 
 interface BodegaInFormProps {
-  branchName: string
+  warehouseId: number
 }
 
 // Mock inventory items - fallback (replaced by Supabase search)
 const mockInventoryItems: InventoryItem[] = []
 
-export function BodegaInForm({ branchName }: BodegaInFormProps) {
+export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
   const [supplierName, setSupplierName] = useState("")
   const [referenceNumber, setReferenceNumber] = useState("")
   const [deliveryDate, setDeliveryDate] = useState("")
@@ -51,10 +52,13 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
   const [isSearching, setIsSearching] = useState(false)
   const [addItemSuccess, setAddItemSuccess] = useState(false)
   const [addItemError, setAddItemError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
   const fileInputRef = useRef<HTMLInputElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const debounceTimerRef = useRef<NodeJS.Timeout>(null)
   const qtyInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
+  const searchQueryRef = useRef(searchQuery)
 
   // Handle file import - parse on file selection
   const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,9 +189,9 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
       console.log("[v0] Database codes found:", matchedItems?.map(m => m.code))
 
       // Build lookup map: normalized code → item id
-      const itemLookup = new Map<string, string>()
+      const itemLookup = new Map<string, number>()
       ;(matchedItems || []).forEach(item => {
-        itemLookup.set(item.code.toLowerCase(), item.id.toString())
+        itemLookup.set(item.code.toLowerCase(), Number(item.id))
       })
 
       // Process and filter rows
@@ -225,6 +229,7 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
         // Create release item for right panel
         validItems.push({
           id: `import-${code}-${Date.now()}-${index}`,
+          itemId: itemId,
           code: code, // Keep as-is from database (lowercase)
           product,
           unit,
@@ -366,6 +371,53 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
     }
   }
 
+  const handleSubmit = async () => {
+    if (!referenceNumber.trim()) {
+      setAddItemError("Reference number is required")
+      return
+    }
+    if (releaseItems.some(item => item.releasedQty <= 0)) {
+      setAddItemError("All items must have a quantity greater than 0")
+      return
+    }
+
+    setIsSubmitting(true)
+    setAddItemError(null)
+
+    try {
+      const supabase = createClient()
+
+      const { error } = await supabase.rpc("process_stock_in", {
+        p_warehouse_id: warehouseId,
+        p_reference: referenceNumber,
+        p_supplier_name: supplierName || null,
+        p_delivery_date: deliveryDate || null,
+        p_items: releaseItems.map(item => ({
+          item_id: item.itemId,
+          quantity: item.releasedQty,
+        })),
+        p_idempotency_key: idempotencyKey,
+      })
+
+      if (error) {
+        setAddItemError("Submission failed: " + error.message)
+        return
+      }
+
+      setReleaseItems([])
+      setReferenceNumber("")
+      setSupplierName("")
+      setDeliveryDate("")
+      setIdempotencyKey(crypto.randomUUID())
+      setAddItemSuccess(true)
+      setTimeout(() => setAddItemSuccess(false), 3000)
+    } catch {
+      setAddItemError("Unexpected error. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const performSearch = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([])
@@ -381,6 +433,8 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
         .from("items")
         .select("id, code, product_name, unit")
         .or(`product_name.ilike.${searchPattern},code.ilike.${searchPattern}`)
+        .is("deleted_at", null)
+        .order("item_no", { ascending: true })
         .limit(20)
 
       if (error) {
@@ -403,6 +457,11 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
     }
   }
 
+  // Keep ref in sync with searchQuery state
+  useEffect(() => {
+    searchQueryRef.current = searchQuery
+  }, [searchQuery])
+
   // Debounced search effect
   useEffect(() => {
     if (debounceTimerRef.current) {
@@ -423,6 +482,25 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
       }
     }
   }, [searchQuery])
+
+  // Realtime refresh for search results when item_stock changes
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel("item_stock_in")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "item_stock" },
+        () => {
+          if (searchQueryRef.current.trim()) {
+            performSearch(searchQueryRef.current)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   // Fetch categories from Supabase
   useEffect(() => {
@@ -457,6 +535,7 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
   const selectSearchItem = (item: InventoryItem) => {
     const newItem: ReleaseItem = {
       id: `search-${item.id}-${Date.now()}`,
+      itemId: Number(item.id),
       code: item.code,
       product: item.name,
       unit: item.unit,
@@ -603,24 +682,20 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
                           key={item.id}
                           onClick={() => selectSearchItem(item)}
                           onMouseEnter={() => setHighlightedIndex(index)}
-                          className={`w-full px-4 py-3 border-b border-gray-100 last:border-b-0 text-left font-mono text-sm transition-colors ${
+                          className={`w-full px-4 py-3 border-b border-gray-100 last:border-b-0 text-left font-sans text-sm transition-colors ${
                             highlightedIndex === index
-                              ? "bg-black text-white"
-                              : "hover:bg-gray-50 text-gray-700"
+                              ? "bg-gray-100 text-gray-900"
+                              : "hover:bg-gray-100 hover:border-black text-gray-700"
                           }`}
                           type="button"
                         >
                           <div className="flex justify-between items-start gap-2">
                             <div className="flex-1">
                               <p className="font-medium">{item.name}</p>
-                              <p className={`text-xs ${highlightedIndex === index ? "text-gray-300" : "text-gray-500"}`}>
-                                {item.code}
-                              </p>
+                              <p className="text-xs text-gray-500">{item.code}</p>
                             </div>
                             <div className="text-right flex-shrink-0">
-                              <p className={`text-xs ${highlightedIndex === index ? "text-gray-300" : "text-gray-600"}`}>
-                                {item.unit}
-                              </p>
+                              <p className="text-xs text-gray-600">{item.unit}</p>
                             </div>
                           </div>
                         </button>
@@ -890,11 +965,11 @@ export function BodegaInForm({ branchName }: BodegaInFormProps) {
           {/* Submit Button */}
           <button
             type="button"
-            onClick={() => console.log("[v0] Form data:", { referenceNumber, supplierName, deliveryDate, items: releaseItems })}
-            disabled={releaseItems.length === 0}
+            onClick={handleSubmit}
+            disabled={releaseItems.length === 0 || isSubmitting}
             className="w-full mt-6 px-4 py-3 bg-black text-white font-mono text-sm tracking-widest uppercase disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-gray-900 transition-colors"
           >
-            Submit
+            {isSubmitting ? "Submitting..." : "Submit"}
           </button>
         </div>
       </div>

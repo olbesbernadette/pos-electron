@@ -51,6 +51,7 @@ const adminItems: SidebarItem[] = [
   { name: "Expenses", slug: "expenses" },
   { name: "Deposits", slug: "deposits" },
   { name: "Checks", slug: "checks" },
+  { name: "Stocks", slug: "stocks" },
   { name: "Customers", slug: "customers" },
   { name: "Rentals", slug: "rentals" },
   { name: "Boarders", slug: "boarders" },

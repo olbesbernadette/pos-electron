@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { BodegaForm } from "@/components/bodega/bodega-form"
 import { BodegaInForm } from "@/components/bodega/bodega-in-form"
+import { BodegaLogs } from "@/components/bodega/bodega-logs"
 
 type BodegaAction = "out" | "in" | "logs"
 
@@ -65,15 +66,11 @@ export default function BodegaZone2Page() {
 
         {/* Content Area */}
         <div>
-          {selectedAction === "out" && <BodegaForm branchName="Zone 2" />}
+          {selectedAction === "out" && <BodegaForm warehouseId={2} />}
           
-          {selectedAction === "in" && <BodegaInForm branchName="Zone 2" />}
+          {selectedAction === "in" && <BodegaInForm warehouseId={2} />}
           
-          {selectedAction === "logs" && (
-            <div className="text-center py-12">
-              <p className="text-gray-400 text-sm font-mono tracking-wider">View Logs content coming soon</p>
-            </div>
-          )}
+          {selectedAction === "logs" && <BodegaLogs warehouseId={2} />}
         </div>
       </div>
     </>
