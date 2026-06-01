@@ -212,8 +212,8 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
   const printReceipt = async () => {
     if (!printData) return
     const { customerName, invoiceNotes, items, submittedAt } = printData
-    const date = submittedAt.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
-    const time = submittedAt.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit", hour12: true })
+    const date = submittedAt.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })
+    const time = submittedAt.toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true })
     const divider = "-----------------------------------------------"
 
     try {
