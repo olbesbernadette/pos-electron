@@ -97,14 +97,16 @@ export default function Dashboard() {
         setGreeting("Good morning!")
       }
 
-      const dateStr = now.toLocaleDateString("en-US", {
+      const dateStr = now.toLocaleDateString("en-PH", {
+        timeZone: "Asia/Manila",
         weekday: "long",
         year: "numeric",
         month: "long",
         day: "numeric",
       })
-      
-      const timeStr = now.toLocaleTimeString("en-US", {
+
+      const timeStr = now.toLocaleTimeString("en-PH", {
+        timeZone: "Asia/Manila",
         hour: "numeric",
         minute: "2-digit",
         hour12: true,

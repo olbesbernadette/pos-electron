@@ -286,7 +286,7 @@ export function ExpensesDataTable() {
         const date = new Date(row.getValue("created_at"))
         return (
           <span className="font-mono text-xs">
-            {date.toLocaleDateString()} {date.toLocaleTimeString()}
+            {date.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })} {date.toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true })}
           </span>
         )
       },

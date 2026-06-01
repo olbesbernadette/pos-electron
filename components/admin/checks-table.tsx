@@ -236,6 +236,7 @@ export function ChecksTable() {
           <div className="flex flex-col border border-gray-200 rounded-md">
             <div className="px-3 py-2 font-mono text-sm">
               {transactionDate.toLocaleDateString("en-PH", {
+                timeZone: "Asia/Manila",
                 year: "numeric",
                 month: "short",
                 day: "numeric",
@@ -304,6 +305,7 @@ export function ChecksTable() {
               <span className="text-xs font-mono text-gray-500 tracking-wider">Date</span>
               <span className="font-mono text-sm">
                 {checkDate.toLocaleDateString("en-PH", {
+                  timeZone: "Asia/Manila",
                   year: "numeric",
                   month: "short",
                   day: "numeric",

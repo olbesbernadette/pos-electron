@@ -229,9 +229,10 @@ export function ExpenseTotalsTable() {
             <div className="mx-3 h-px bg-gray-200" />
             {/* Shift Date */}
             <div className="px-3 py-2 font-mono text-xs">
-              {date.toLocaleDateString("en-PH", { 
-                year: "numeric", 
-                month: "short", 
+              {date.toLocaleDateString("en-PH", {
+                timeZone: "Asia/Manila",
+                year: "numeric",
+                month: "short",
                 day: "numeric",
               })}
             </div>
@@ -239,7 +240,7 @@ export function ExpenseTotalsTable() {
             {/* Closing Time */}
             <div className="px-3 py-2 font-mono text-xs text-gray-400">
               {closedTime 
-                ? `Closed ${new Date(closedTime).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}`
+                ? `Closed ${new Date(closedTime).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit" })}`
                 : "Open"
               }
             </div>
@@ -504,6 +505,7 @@ export function ExpenseTotalsTable() {
                   <span className="text-xs font-mono text-gray-500 uppercase">Date</span>
                   <p className="font-mono text-sm">
                     {new Date(selectedRow.shift_date).toLocaleDateString("en-PH", {
+                      timeZone: "Asia/Manila",
                       year: "numeric",
                       month: "short",
                       day: "numeric",

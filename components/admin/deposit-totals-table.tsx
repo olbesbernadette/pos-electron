@@ -283,6 +283,7 @@ export function DepositTotalsTable() {
         return (
           <div className="font-mono text-sm">
             {depositDate.toLocaleDateString("en-PH", {
+              timeZone: "Asia/Manila",
               year: "numeric",
               month: "short",
               day: "numeric",
@@ -318,6 +319,7 @@ export function DepositTotalsTable() {
             {/* Shift Date */}
             <div className="px-3 py-2 font-mono text-xs text-gray-400">
               {shiftDate.toLocaleDateString("en-PH", {
+                timeZone: "Asia/Manila",
                 year: "numeric",
                 month: "short",
                 day: "numeric",

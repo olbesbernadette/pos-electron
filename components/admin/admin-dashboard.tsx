@@ -118,7 +118,7 @@ function buildDayRange(from: string, to: string) {
   while (cur <= end) {
     result.push({
       date: localDateString(cur),
-      dateLabel: cur.toLocaleDateString("en-PH", { month: "short", day: "numeric" }),
+      dateLabel: cur.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric" }),
     })
     cur.setDate(cur.getDate() + 1)
   }
@@ -132,7 +132,7 @@ function buildMonthRange(from: string, to: string) {
   while (cur <= end) {
     result.push({
       date: `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`,
-      dateLabel: cur.toLocaleDateString("en-PH", { month: "short" }),
+      dateLabel: cur.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short" }),
     })
     cur.setMonth(cur.getMonth() + 1)
   }
@@ -414,7 +414,7 @@ export function AdminDashboard() {
       case "year": return `Year ${new Date().getFullYear()}`
       case "custom":
         if (!customFrom || !customTo) return "Custom Range"
-        return `${new Date(customFrom + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" })} – ${new Date(customTo + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}`
+        return `${new Date(customFrom + "T00:00:00").toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric" })} – ${new Date(customTo + "T00:00:00").toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })}`
     }
   }, [dateRangeOption, customFrom, customTo])
 
@@ -492,7 +492,7 @@ export function AdminDashboard() {
           </span>
         )}
         <span className="text-xs font-mono text-gray-400 tracking-wider">
-          {new Date().toLocaleDateString("en-PH", {
+          {new Date().toLocaleDateString("en-PH", { timeZone: "Asia/Manila",
             weekday: "long",
             year: "numeric",
             month: "long",
@@ -559,7 +559,7 @@ export function AdminDashboard() {
                 <PopoverTrigger asChild>
                   <button className="h-7 px-3 text-xs font-mono border border-gray-200 flex items-center gap-1.5 hover:border-gray-400 transition-colors">
                     {customFrom
-                      ? new Date(customFrom + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+                      ? new Date(customFrom + "T00:00:00").toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })
                       : "From"}
                     <CaretDown className="w-3 h-3 text-gray-400" />
                   </button>
@@ -577,7 +577,7 @@ export function AdminDashboard() {
                 <PopoverTrigger asChild>
                   <button className="h-7 px-3 text-xs font-mono border border-gray-200 flex items-center gap-1.5 hover:border-gray-400 transition-colors">
                     {customTo
-                      ? new Date(customTo + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+                      ? new Date(customTo + "T00:00:00").toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })
                       : "To"}
                     <CaretDown className="w-3 h-3 text-gray-400" />
                   </button>

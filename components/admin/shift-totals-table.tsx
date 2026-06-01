@@ -513,9 +513,10 @@ export function ShiftTotalsTable() {
             <div className="mx-3 h-px bg-gray-200" />
             {/* Shift Date */}
             <div className="px-3 py-2 font-mono text-xs">
-              {date.toLocaleDateString("en-PH", { 
-                year: "numeric", 
-                month: "short", 
+              {date.toLocaleDateString("en-PH", {
+                timeZone: "Asia/Manila",
+                year: "numeric",
+                month: "short",
                 day: "numeric",
               })}
             </div>
@@ -523,7 +524,7 @@ export function ShiftTotalsTable() {
             {/* Closing Time */}
             <div className="px-3 py-2 font-mono text-xs text-gray-400">
               {closedAt 
-                ? `Closed ${closedAt.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}`
+                ? `Closed ${closedAt.toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit" })}`
                 : "Open"
               }
             </div>
@@ -947,6 +948,7 @@ export function ShiftTotalsTable() {
                   <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Shift Date</span>
                   <span className="text-sm font-mono">
                     {new Date(dialogInfo.shiftDate).toLocaleDateString("en-PH", {
+                      timeZone: "Asia/Manila",
                       year: "numeric",
                       month: "short",
                       day: "numeric",
@@ -1024,6 +1026,7 @@ export function ShiftTotalsTable() {
                         </TableCell>
                         <TableCell className="text-xs font-mono">
                           {new Date(transaction.created_at).toLocaleTimeString("en-PH", {
+                            timeZone: "Asia/Manila",
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
@@ -1052,6 +1055,7 @@ export function ShiftTotalsTable() {
                             <TableCell className="text-xs font-mono text-gray-600">
                               {checkDetail?.check_date 
                                 ? new Date(checkDetail.check_date).toLocaleDateString("en-PH", {
+                                    timeZone: "Asia/Manila",
                                     year: "numeric",
                                     month: "short",
                                     day: "numeric",
