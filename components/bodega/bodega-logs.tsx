@@ -1,16 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Trash } from "@phosphor-icons/react"
+import { Trash, PencilSimple } from "@phosphor-icons/react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { createClient } from "@/lib/supabase/client"
-import { format, parseISO } from "date-fns"
+const toManila = (dateStr: string) => new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z")
+const manilaDate = (dateStr: string) =>
+  toManila(dateStr).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })
+const manilaTime = (dateStr: string) =>
+  toManila(dateStr).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true })
 
 interface LogItem {
+  stock_in_item_id?: number
   product_name: string
   code: string
   unit: string
   quantity: number
+  cogs?: number | null
+  total?: number | null
 }
 
 interface LogEntry {
@@ -23,6 +30,7 @@ interface LogEntry {
   customer_name: string | null
   remarks: string | null
   items: LogItem[]
+  overall_total?: number | null
 }
 
 interface BodegaLogsProps {
@@ -39,66 +47,86 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editedCogs, setEditedCogs] = useState<Record<number, number | "">>({})
+  const [isSaving, setIsSaving] = useState(false)
 
   const fetchLogs = async () => {
     setLoading(true)
-    const supabase = createClient()
+    try {
+      const supabase = createClient()
 
-    const [stockInRes, stockOutRes] = await Promise.all([
-      supabase
-        .from("stock_in")
-        .select("id, reference, supplier_name, delivery_date, created_at, stock_in_items(quantity, items(product_name, code, unit))")
-        .eq("warehouse_id", warehouseId)
-        .order("created_at", { ascending: false })
-        .limit(100),
-      supabase
-        .from("stock_out")
-        .select("id, customer_name, remarks, created_at, stock_out_items(quantity, items(product_name, code, unit))")
-        .eq("warehouse_id", warehouseId)
-        .order("created_at", { ascending: false })
-        .limit(100),
-    ])
+      const [stockInRes, stockOutRes] = await Promise.all([
+        supabase
+          .from("stock_in")
+          .select("id, reference, supplier_name, delivery_date, created_at, stock_in_items(id, quantity, cogs, total, items(product_name, code, unit))")
+          .eq("warehouse_id", warehouseId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("stock_out")
+          .select("id, customer_name, remarks, created_at, stock_out_items(quantity, items(product_name, code, unit))")
+          .eq("warehouse_id", warehouseId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+      ])
 
-    const inLogs: LogEntry[] = (stockInRes.data || []).map((row: any) => ({
-      id: row.id,
-      type: "IN",
-      created_at: row.created_at,
-      reference: row.reference,
-      supplier_name: row.supplier_name,
-      delivery_date: row.delivery_date,
-      customer_name: null,
-      remarks: null,
-      items: (row.stock_in_items || []).map((si: any) => ({
-        product_name: si.items?.product_name ?? "",
-        code: si.items?.code ?? "",
-        unit: si.items?.unit ?? "",
-        quantity: si.quantity,
-      })),
-    }))
+      if (stockInRes.error) console.error("stock_in query error:", stockInRes.error.message)
+      if (stockOutRes.error) console.error("stock_out query error:", stockOutRes.error.message)
 
-    const outLogs: LogEntry[] = (stockOutRes.data || []).map((row: any) => ({
-      id: row.id,
-      type: "OUT",
-      created_at: row.created_at,
-      reference: null,
-      supplier_name: null,
-      delivery_date: null,
-      customer_name: row.customer_name,
-      remarks: row.remarks,
-      items: (row.stock_out_items || []).map((so: any) => ({
-        product_name: so.items?.product_name ?? "",
-        code: so.items?.code ?? "",
-        unit: so.items?.unit ?? "",
-        quantity: so.quantity,
-      })),
-    }))
+      const inLogs: LogEntry[] = (stockInRes.data || []).map((row: any) => {
+        const items: LogItem[] = (row.stock_in_items || []).map((si: any) => ({
+          stock_in_item_id: si.id,
+          product_name: si.items?.product_name ?? "",
+          code: si.items?.code ?? "",
+          unit: si.items?.unit ?? "",
+          quantity: si.quantity,
+          cogs: si.cogs ?? null,
+          total: si.total ?? null,
+        }))
+        const overall_total = items.reduce((sum, i) => sum + (i.total ?? 0), 0)
+        return {
+          id: row.id,
+          type: "IN",
+          created_at: row.created_at,
+          reference: row.reference,
+          supplier_name: row.supplier_name,
+          delivery_date: row.delivery_date,
+          customer_name: null,
+          remarks: null,
+          items,
+          overall_total,
+        }
+      })
 
-    const combined = [...inLogs, ...outLogs].sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    )
+      const outLogs: LogEntry[] = (stockOutRes.data || []).map((row: any) => ({
+        id: row.id,
+        type: "OUT",
+        created_at: row.created_at,
+        reference: null,
+        supplier_name: null,
+        delivery_date: null,
+        customer_name: row.customer_name,
+        remarks: row.remarks,
+        items: (row.stock_out_items || []).map((so: any) => ({
+          product_name: so.items?.product_name ?? "",
+          code: so.items?.code ?? "",
+          unit: so.items?.unit ?? "",
+          quantity: so.quantity,
+        })),
+      }))
 
-    setLogs(combined)
-    setLoading(false)
+      const combined = [...inLogs, ...outLogs].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+
+      setLogs(combined)
+    } catch (err) {
+      console.error("fetchLogs error:", err)
+      setLogs([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -122,6 +150,42 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
     } finally {
       setDeletingId(null)
       setConfirmDeleteId(null)
+    }
+  }
+
+  const startEdit = (entry: LogEntry) => {
+    const key = `${entry.type}-${entry.id}`
+    const initial: Record<number, number | ""> = {}
+    entry.items.forEach(item => {
+      if (item.stock_in_item_id != null) {
+        initial[item.stock_in_item_id] = item.cogs ?? ""
+      }
+    })
+    setEditedCogs(initial)
+    setEditingId(key)
+  }
+
+  const handleSave = async (entry: LogEntry) => {
+    setIsSaving(true)
+    try {
+      const supabase = createClient()
+      await Promise.all(
+        entry.items
+          .filter(item => item.stock_in_item_id != null)
+          .map(item =>
+            supabase
+              .from("stock_in_items")
+              .update({ cogs: editedCogs[item.stock_in_item_id!] === "" ? null : editedCogs[item.stock_in_item_id!] })
+              .eq("id", item.stock_in_item_id!)
+          )
+      )
+      setEditingId(null)
+      setEditedCogs({})
+      fetchLogs()
+    } catch (err) {
+      console.error("Save error:", err)
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -157,7 +221,7 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
       ) : (
         <div className="border border-gray-200 rounded-xl overflow-hidden">
           {/* Table Header */}
-          <div className="grid grid-cols-[44px_100px_160px_220px_1fr_140px_100px] bg-gray-50 border-b border-gray-200">
+          <div className="grid grid-cols-[44px_100px_160px_220px_1fr_160px_140px_100px] bg-gray-50 border-b border-gray-200">
             <div className="flex items-center justify-center py-3">
               <Checkbox
                 checked={filteredLogs.length > 0 && filteredLogs.every(l => selectedIds.has(`${l.type}-${l.id}`))}
@@ -183,6 +247,9 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
               Breakdown
             </div>
             <div className="px-4 py-3 text-xs font-mono text-gray-500 tracking-wider uppercase">
+              Total
+            </div>
+            <div className="px-4 py-3 text-xs font-mono text-gray-500 tracking-wider uppercase">
               Added at
             </div>
             <div className="pl-4 pr-6 py-3 text-xs font-mono text-gray-500 tracking-wider uppercase">
@@ -195,11 +262,12 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
             const key = `${entry.type}-${entry.id}`
             const isConfirming = confirmDeleteId === key
             const isDeleting = deletingId === key
+            const isEditing = editingId === key
 
             return (
               <div
                 key={key}
-                className="grid grid-cols-[44px_100px_160px_220px_1fr_140px_100px] border-b border-gray-100 last:border-b-0"
+                className="grid grid-cols-[44px_100px_160px_220px_1fr_160px_140px_100px] border-b border-gray-100 last:border-b-0"
               >
                 {/* Selection */}
                 <div className="flex items-center justify-center py-4">
@@ -228,11 +296,11 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
                 <div className="px-4 py-4">
                   <p className="font-mono text-sm text-gray-700">
                     {entry.delivery_date
-                      ? format(parseISO(entry.delivery_date), "MMM d, yyyy")
-                      : format(parseISO(entry.created_at), "MMM d, yyyy")}
+                      ? manilaDate(entry.delivery_date)
+                      : manilaDate(entry.created_at)}
                   </p>
                   <p className="font-mono text-xs text-gray-400 mt-0.5">
-                    {format(parseISO(entry.created_at), "h:mm a")}
+                    {manilaTime(entry.created_at)}
                   </p>
                 </div>
 
@@ -279,14 +347,43 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
                     const hasMore = entry.items.length > 10
                     return (
                       <>
-                        {visibleItems.map((item, i) => (
-                          <div key={i} className="flex justify-between items-center gap-4 px-4 py-1.5 border-b border-gray-100 last:border-b-0">
-                            <span className="font-sans text-sm text-gray-700 truncate">{item.product_name}</span>
-                            <span className="font-sans text-sm text-gray-600 flex-shrink-0">
-                              {item.quantity} <span className="text-xs text-gray-400">{item.unit}</span>
-                            </span>
-                          </div>
-                        ))}
+                        {visibleItems.map((item, i) => {
+                          const itemCogs = item.stock_in_item_id != null ? editedCogs[item.stock_in_item_id] : undefined
+                          const liveTotal = itemCogs !== undefined && itemCogs !== ""
+                            ? Number(itemCogs) * item.quantity
+                            : item.total
+                          return (
+                            <div key={i} className="grid grid-cols-[1fr_64px_96px_72px] gap-x-3 items-center px-4 py-1.5 border-b border-gray-100 last:border-b-0">
+                              <span className="font-sans text-sm text-gray-700 truncate">{item.product_name}</span>
+                              <span className="font-sans text-sm text-gray-600 text-right whitespace-nowrap">
+                                {item.quantity} <span className="text-xs text-gray-400">{item.unit}</span>
+                              </span>
+                              {isEditing && item.stock_in_item_id != null ? (
+                                <div className="flex justify-end">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={editedCogs[item.stock_in_item_id] ?? ""}
+                                    onChange={e => setEditedCogs(prev => ({
+                                      ...prev,
+                                      [item.stock_in_item_id!]: e.target.value === "" ? "" : parseFloat(e.target.value) || 0,
+                                    }))}
+                                    onFocus={e => e.target.select()}
+                                    className="w-20 px-2 py-0.5 border border-gray-300 font-mono text-xs text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                </div>
+                              ) : (
+                                <span className="font-mono text-xs text-gray-400 text-left block overflow-hidden">
+                                  {item.cogs != null ? `@${item.cogs.toLocaleString()}` : ""}
+                                </span>
+                              )}
+                              <span className={`font-mono text-sm text-right ${liveTotal != null ? (isEditing ? "text-black font-medium" : "text-gray-700") : ""}`}>
+                                {liveTotal != null ? liveTotal.toLocaleString() : ""}
+                              </span>
+                            </div>
+                          )
+                        })}
                         {hasMore && (
                           <button
                             onClick={() => setExpandedIds(prev => {
@@ -304,19 +401,63 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
                   })()}
                 </div>
 
+                {/* Total */}
+                <div className="px-4 py-4">
+                  {entry.type === "IN" ? (() => {
+                    const displayTotal = isEditing
+                      ? entry.items.reduce((sum, item) => {
+                          if (item.stock_in_item_id == null) return sum
+                          const c = editedCogs[item.stock_in_item_id]
+                          return sum + (c === "" || c == null ? 0 : Number(c)) * item.quantity
+                        }, 0)
+                      : (entry.overall_total ?? 0)
+                    return (
+                      <div className={`border rounded-lg ${isEditing ? "border-black" : "border-gray-200"}`}>
+                        <div className="px-3 py-2">
+                          <p className="text-xs font-mono text-gray-400 tracking-wider uppercase">Overall</p>
+                        </div>
+                        <div className="mx-3 border-t border-gray-100" />
+                        <div className="px-3 py-2">
+                          <p className={`font-mono text-sm font-medium ${isEditing ? "text-black" : "text-gray-800"}`}>
+                            {displayTotal.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })() : (
+                    <span className="text-xs text-gray-300 font-mono">—</span>
+                  )}
+                </div>
+
                 {/* Added at */}
                 <div className="px-4 py-4">
                   <p className="font-mono text-sm text-gray-700">
-                    {format(parseISO(entry.created_at), "MMM d, yyyy")}
+                    {manilaDate(entry.created_at)}
                   </p>
                   <p className="font-mono text-xs text-gray-400 mt-0.5">
-                    {format(parseISO(entry.created_at), "h:mm a")}
+                    {manilaTime(entry.created_at)}
                   </p>
                 </div>
 
                 {/* Actions */}
                 <div className="pl-3 pr-4 py-4 flex flex-col items-center gap-1.5">
-                  {isConfirming ? (
+                  {isEditing ? (
+                    <>
+                      <button
+                        onClick={() => handleSave(entry)}
+                        disabled={isSaving}
+                        className="w-full px-2 py-1.5 text-[10px] font-mono border border-black text-black hover:bg-black hover:text-white transition-colors disabled:opacity-50 rounded"
+                      >
+                        {isSaving ? "..." : "Save"}
+                      </button>
+                      <button
+                        onClick={() => { setEditingId(null); setEditedCogs({}) }}
+                        className="w-full px-2 py-1.5 text-[10px] font-mono border border-gray-200 hover:border-black transition-colors rounded"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : isConfirming ? (
                     <>
                       <button
                         onClick={() => handleDelete(entry)}
@@ -333,13 +474,24 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
                       </button>
                     </>
                   ) : (
-                    <button
-                      onClick={() => setConfirmDeleteId(key)}
-                      className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
-                      title="Delete record"
-                    >
-                      <Trash className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {entry.type === "IN" && (
+                        <button
+                          onClick={() => startEdit(entry)}
+                          className="p-1.5 text-gray-400 hover:text-black transition-colors"
+                          title="Edit COGS"
+                        >
+                          <PencilSimple className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setConfirmDeleteId(key)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                        title="Delete record"
+                      >
+                        <Trash className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

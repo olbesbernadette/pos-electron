@@ -65,7 +65,9 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
         .is("deleted_at", null)
         .order("item_no", { ascending: true })
 
-      if (!error) {
+      if (error) {
+        console.error("Load items error:", error.message)
+      } else {
         setAllItems(
           (data || []).map((item: any) => ({
             id: item.id,

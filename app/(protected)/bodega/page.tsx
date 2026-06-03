@@ -1,11 +1,12 @@
 "use client"
 
-import { ArrowLeft, Warehouse, MapPin, CaretRight } from "@phosphor-icons/react"
+import { ArrowLeft, Warehouse, MapPin, Wrench, CaretRight } from "@phosphor-icons/react"
 import Link from "next/link"
 
 const bodegaLocations = [
   { name: "Pawa", slug: "pawa", icon: Warehouse },
   { name: "Zone 2", slug: "zone-2", icon: MapPin },
+  { name: "Hardware", slug: "hardware", icon: Wrench },
 ]
 
 export default function BodegaPage() {

@@ -15,6 +15,7 @@ interface ReleaseItem {
   product: string
   unit: string
   releasedQty: number
+  cogs: number
 }
 
 interface InventoryItem {
@@ -22,6 +23,7 @@ interface InventoryItem {
   code: string
   name: string
   unit: string
+  cogs?: number
 }
 
 interface BodegaInFormProps {
@@ -40,6 +42,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
   const [newItemName, setNewItemName] = useState("")
   const [newItemCategory, setNewItemCategory] = useState<number | "">("")
   const [newItemUnit, setNewItemUnit] = useState("pc")
+  const [newItemCogs, setNewItemCogs] = useState<number | "">(0)
   const [categories, setCategories] = useState<Array<{ id: number; name: string }>>([])
   const [isLoadingCategories, setIsLoadingCategories] = useState(true)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
@@ -176,7 +179,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
       
       const { data: matchedItems, error: queryError } = await supabase
         .from("items")
-        .select("id, code")
+        .select("id, code, cogs")
         .in("code", codes) // Query with lowercase as extracted from CSV
 
       if (queryError) {
@@ -188,10 +191,10 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
       console.log("[v0] Matched items from database:", matchedItems?.length, "items found")
       console.log("[v0] Database codes found:", matchedItems?.map(m => m.code))
 
-      // Build lookup map: normalized code → item id
-      const itemLookup = new Map<string, number>()
+      // Build lookup map: normalized code → { id, cogs }
+      const itemLookup = new Map<string, { id: number; cogs: number | null }>()
       ;(matchedItems || []).forEach(item => {
-        itemLookup.set(item.code.toLowerCase(), Number(item.id))
+        itemLookup.set(item.code.toLowerCase(), { id: Number(item.id), cogs: item.cogs ?? null })
       })
 
       // Process and filter rows
@@ -210,14 +213,14 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
         console.log(`[v0] Row ${index}: code="${code}", product="${product}", unit="${unit}", qty=${releasedQty}`)
 
         // Filter: code must exist in items table and qty > 0
-        const itemId = itemLookup.get(code)
-        if (!itemId) {
+        const lookup = itemLookup.get(code)
+        if (!lookup) {
           console.log(`[v0]   -> Code "${code}" NOT found in database (lookup has ${itemLookup.size} items)`)
           console.log(`[v0]   -> Available in lookup: ${Array.from(itemLookup.keys()).slice(0, 5).join(", ")}...`)
           totalSkipped++
           return
         }
-        
+
         if (releasedQty <= 0) {
           console.log(`[v0]   -> Qty is 0 or invalid, skipping`)
           totalSkipped++
@@ -229,11 +232,12 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
         // Create release item for right panel
         validItems.push({
           id: `import-${code}-${Date.now()}-${index}`,
-          itemId: itemId,
+          itemId: lookup.id,
           code: code, // Keep as-is from database (lowercase)
           product,
           unit,
           releasedQty,
+          cogs: lookup.cogs ?? 0,
         })
       })
 
@@ -305,6 +309,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
           product_name: newItemName,
           unit: newItemUnit,
           category_id: newItemCategory,
+          cogs: newItemCogs !== "" ? newItemCogs : null,
         })
         .select()
 
@@ -317,6 +322,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
       // Clear form
       setNewItemName("")
       setNewItemUnit("pc")
+      setNewItemCogs(0)
       if (categories.length > 0) {
         setNewItemCategory(categories[0].id)
       }
@@ -340,6 +346,13 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
   const updateQty = (id: string, qty: number) => {
     setReleaseItems(prev =>
       prev.map(item => item.id === id ? { ...item, releasedQty: Math.max(0, qty) } : item)
+    )
+  }
+
+  // Update COGS
+  const updateCogs = (id: string, cogs: number) => {
+    setReleaseItems(prev =>
+      prev.map(item => item.id === id ? { ...item, cogs: Math.max(0, cogs) } : item)
     )
   }
 
@@ -371,6 +384,34 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
     }
   }
 
+  // Handle keyboard navigation for COGS inputs
+  const handleCogsKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, currentIndex: number) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      if (currentIndex < releaseItems.length - 1) {
+        const nextId = releaseItems[currentIndex + 1].id
+        setTimeout(() => {
+          const nextInput = document.querySelector(`input[data-cogs-id="${nextId}"]`) as HTMLInputElement
+          nextInput?.focus()
+        }, 0)
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault()
+      if (currentIndex < releaseItems.length - 1) {
+        const nextId = releaseItems[currentIndex + 1].id
+        const nextInput = document.querySelector(`input[data-cogs-id="${nextId}"]`) as HTMLInputElement
+        nextInput?.focus()
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      if (currentIndex > 0) {
+        const prevId = releaseItems[currentIndex - 1].id
+        const prevInput = document.querySelector(`input[data-cogs-id="${prevId}"]`) as HTMLInputElement
+        prevInput?.focus()
+      }
+    }
+  }
+
   const handleSubmit = async () => {
     if (!referenceNumber.trim()) {
       setAddItemError("Reference number is required")
@@ -395,6 +436,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
         p_items: releaseItems.map(item => ({
           item_id: item.itemId,
           quantity: item.releasedQty,
+          cogs: item.cogs || null,
         })),
         p_idempotency_key: idempotencyKey,
       })
@@ -431,7 +473,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
 
       const { data, error } = await supabase
         .from("items")
-        .select("id, code, product_name, unit")
+        .select("id, code, product_name, unit, cogs")
         .or(`product_name.ilike.${searchPattern},code.ilike.${searchPattern}`)
         .is("deleted_at", null)
         .order("item_no", { ascending: true })
@@ -446,6 +488,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
           code: item.code,
           name: item.product_name,
           unit: item.unit,
+          cogs: item.cogs ?? 0,
         }))
         setSearchResults(results)
       }
@@ -540,6 +583,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
       product: item.name,
       unit: item.unit,
       releasedQty: 0,
+      cogs: item.cogs ?? 0,
     }
     setReleaseItems([...releaseItems, newItem])
     setSearchQuery("")
@@ -788,6 +832,16 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                 <option>ltr</option>
                 <option>pail</option>
               </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="COGS"
+                value={newItemCogs}
+                onChange={(e) => setNewItemCogs(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
+                onFocus={(e) => e.target.select()}
+                className="w-full sm:w-28 px-4 py-3 border border-gray-200 font-mono text-sm focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
               <button
                 onClick={addNewItem}
                 className="px-4 py-3 bg-black text-white font-mono text-sm hover:bg-gray-900 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto"
@@ -867,11 +921,12 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
           {/* Items Table / Cards */}
           <div className="hidden md:block border border-gray-200">
             {/* Desktop Table Header */}
-            <div className="grid grid-cols-[80px_1fr_80px_80px_60px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="grid grid-cols-[80px_1fr_80px_80px_80px_60px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Code</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Product</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Unit</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Qty</span>
+              <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">COGS</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Action</span>
             </div>
 
@@ -882,7 +937,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
               </div>
             ) : (
               releaseItems.map((item, index) => (
-                <div key={item.id} className="grid grid-cols-[80px_1fr_80px_80px_60px] gap-3 px-4 py-3 border-b border-gray-100 items-center last:border-b-0">
+                <div key={item.id} className="grid grid-cols-[80px_1fr_80px_80px_80px_60px] gap-3 px-4 py-3 border-b border-gray-100 items-center last:border-b-0">
                   <span className="px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600 whitespace-nowrap text-center">{item.code || "-"}</span>
                   <span className="font-mono text-sm text-gray-600 truncate">{item.product}</span>
                   <span className="font-mono text-sm text-gray-600">{item.unit || "pc"}</span>
@@ -897,6 +952,17 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                     onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => handleQtyKeyDown(e, index)}
+                    className="w-full px-2 py-1 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+                  />
+                  <input
+                    data-cogs-id={item.id}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={item.cogs}
+                    onChange={(e) => updateCogs(item.id, parseFloat(e.target.value) || 0)}
+                    onFocus={(e) => e.target.select()}
+                    onKeyDown={(e) => handleCogsKeyDown(e, index)}
                     className="w-full px-2 py-1 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
                   />
                   <button
@@ -942,20 +1008,37 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
 
                   <div className="border-t border-gray-200"></div>
 
-                  <div>
-                    <input
-                      data-item-id={item.id}
-                      ref={(el) => {
-                        if (el) qtyInputRefs.current[item.id] = el
-                      }}
-                      type="number"
-                      min="0"
-                      value={item.releasedQty}
-                      onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
-                      onFocus={(e) => e.target.select()}
-                      onKeyDown={(e) => handleQtyKeyDown(e, index)}
-                      className="w-full px-2 py-2 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-xs font-mono text-gray-400 tracking-wider uppercase mb-1">Qty</p>
+                      <input
+                        data-item-id={item.id}
+                        ref={(el) => {
+                          if (el) qtyInputRefs.current[item.id] = el
+                        }}
+                        type="number"
+                        min="0"
+                        value={item.releasedQty}
+                        onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
+                        onFocus={(e) => e.target.select()}
+                        onKeyDown={(e) => handleQtyKeyDown(e, index)}
+                        className="w-full px-2 py-2 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-mono text-gray-400 tracking-wider uppercase mb-1">COGS</p>
+                      <input
+                        data-cogs-id={item.id}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.cogs}
+                        onChange={(e) => updateCogs(item.id, parseFloat(e.target.value) || 0)}
+                        onFocus={(e) => e.target.select()}
+                        onKeyDown={(e) => handleCogsKeyDown(e, index)}
+                        className="w-full px-2 py-2 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+                      />
+                    </div>
                   </div>
                 </div>
               ))

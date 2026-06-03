@@ -33,9 +33,9 @@ export default function AdminPage() {
   return (
     <div className="flex min-h-[calc(100vh-80px)]">
       <Sidebar basePath="/admin" />
-      <section className="flex-1 px-8 py-12">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-medium tracking-wide">Admin</h1>
+      <section className="flex-1 min-w-0 px-4 py-6 md:px-8 md:py-12">
+        <div className="flex items-center justify-between mb-6 md:mb-8">
+          <h1 className="text-xl md:text-2xl font-medium tracking-wide">Admin</h1>
           <Link
             href="/"
             className="hidden md:inline-flex items-center gap-2 text-xs text-gray-500 hover:text-black transition-colors"

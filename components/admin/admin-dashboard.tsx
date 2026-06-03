@@ -65,35 +65,40 @@ const expenseTypeNames: Record<number, string> = {
 }
 
 const branchBarColors: Record<number, { fill: string; stroke: string }> = {
-  1: { fill: "#22d3ee", stroke: "#06b6d4" },  // cyan-400 / cyan-500
-  2: { fill: "#38bdf8", stroke: "#0ea5e9" },  // sky-400 / sky-500
-  3: { fill: "#818cf8", stroke: "#6366f1" },  // indigo-400 / indigo-500
-  4: { fill: "#a78bfa", stroke: "#8b5cf6" },  // violet-400 / violet-500
-  5: { fill: "#2dd4bf", stroke: "#14b8a6" },  // teal-400 / teal-500
-  6: { fill: "#60a5fa", stroke: "#3b82f6" },  // blue-400 / blue-500
+  1: { fill: "#1e40af", stroke: "#1e3a8a" },  // blue-800 / blue-900
+  2: { fill: "#2563eb", stroke: "#1d4ed8" },  // blue-600 / blue-700
+  3: { fill: "#3b82f6", stroke: "#2563eb" },  // blue-500 / blue-600
+  4: { fill: "#60a5fa", stroke: "#3b82f6" },  // blue-400 / blue-500
+  5: { fill: "#93c5fd", stroke: "#60a5fa" },  // blue-300 / blue-400
+  6: { fill: "#bfdbfe", stroke: "#93c5fd" },  // blue-200 / blue-300
 }
 
 const expenseBarColors: Record<string, { fill: string; stroke: string }> = {
-  Payroll:     { fill: "#a78bfa", stroke: "#8b5cf6" },  // violet
-  Deposit:     { fill: "#22d3ee", stroke: "#06b6d4" },  // cyan
-  Repairs:     { fill: "#818cf8", stroke: "#6366f1" },  // indigo
-  Utilities:   { fill: "#c084fc", stroke: "#a855f7" },  // purple
-  "Port Fees": { fill: "#38bdf8", stroke: "#0ea5e9" },  // sky
-  Others:      { fill: "#94a3b8", stroke: "#64748b" },  // slate
+  Payroll:     { fill: "#1e40af", stroke: "#1e3a8a" },  // blue-800
+  Deposit:     { fill: "#1d4ed8", stroke: "#1e40af" },  // blue-700
+  Repairs:     { fill: "#3b82f6", stroke: "#2563eb" },  // blue-500
+  Utilities:   { fill: "#60a5fa", stroke: "#3b82f6" },  // blue-400
+  "Port Fees": { fill: "#93c5fd", stroke: "#60a5fa" },  // blue-300
+  Others:      { fill: "#bfdbfe", stroke: "#93c5fd" },  // blue-200
 }
 
 const formatCurrency = (amount: number) =>
   `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
 
+const formatMonth = (ym: string) => {
+  const [y, m] = ym.split("-")
+  return new Date(+y, +m - 1, 1).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", year: "numeric" })
+}
+
 const overviewConfig: ChartConfig = {
-  sales:    { label: "Sales",    color: "#22d3ee" },  // cyan-400
-  expenses: { label: "Expenses", color: "#a78bfa" },  // violet-400
+  sales:    { label: "Sales",    color: "#1d4ed8" },  // blue-700
+  expenses: { label: "Expenses", color: "#93c5fd" },  // blue-300
 }
 
 const depositsConfig: ChartConfig = {
-  cash:  { label: "Cash",  color: "#22d3ee" },  // cyan-400
-  check: { label: "Check", color: "#a78bfa" },  // violet-400
-  gcash: { label: "GCash", color: "#38bdf8" },  // sky-400
+  cash:  { label: "Cash",  color: "#1e40af" },  // blue-800
+  check: { label: "Check", color: "#3b82f6" },  // blue-500
+  gcash: { label: "GCash", color: "#93c5fd" },  // blue-300
 }
 
 function localDateString(date: Date): string {
@@ -188,6 +193,9 @@ export function AdminDashboard() {
 
   const [undepositedChecksTotal, setUndepositedChecksTotal] = useState(0)
   const [undepositedChecksCount, setUndepositedChecksCount] = useState(0)
+  const [rangeCogs, setRangeCogs] = useState(0)
+  const [cogsRawData, setCogsRawData] = useState<any[]>([])
+  const [shiftTotalsRawData, setShiftTotalsRawData] = useState<any[]>([])
 
   // Fetch current shift transactions
   useEffect(() => {
@@ -216,11 +224,11 @@ export function AdminDashboard() {
     const supabase = createClient()
 
     const shiftTotalsQ = selectedBranch !== null
-      ? supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, total_amount")
+      ? supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, total_amount, created_at")
           .gte("created_at", range.from)
           .lt("created_at", nextDay(range.to))
           .eq("branch_id", selectedBranch)
-      : supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, total_amount")
+      : supabase.from("shift_totals").select("branch_id, payment_type, transaction_type, total_amount, created_at")
           .gte("created_at", range.from)
           .lt("created_at", nextDay(range.to))
 
@@ -228,22 +236,31 @@ export function AdminDashboard() {
       ? supabase.from("shift_transactions").select("amount").eq("payment_type", 3).eq("transaction_type", 1).neq("status", 2).eq("branch_id", selectedBranch)
       : supabase.from("shift_transactions").select("amount").eq("payment_type", 3).eq("transaction_type", 1).neq("status", 2)
 
+    const cogsQ = supabase
+      .from("stock_in")
+      .select("created_at, stock_in_items(total)")
+      .gte("created_at", range.from)
+      .lt("created_at", nextDay(range.to))
+
     const [
       { data: salesExpenses, error: salesErr },
       { data: deposits, error: depositsErr },
       { data: shiftTotalsRaw, error: shiftTotalsErr },
       { data: checksRaw, error: checksErr },
+      { data: cogsRaw, error: cogsErr },
     ] = await Promise.all([
       supabase.rpc("get_sales_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
       supabase.rpc("get_deposits_overview", { p_from: range.from, p_to: range.to, p_branch_id: selectedBranch }),
       shiftTotalsQ,
       checksQ,
+      cogsQ,
     ])
 
     if (salesErr) console.error("get_sales_overview:", salesErr.message)
     if (depositsErr) console.error("get_deposits_overview:", depositsErr.message)
     if (shiftTotalsErr) console.error("shift_totals:", shiftTotalsErr.message)
     if (checksErr) console.error("undeposited checks:", checksErr.message)
+    if (cogsErr) console.error("cogs:", cogsErr.message)
 
     setSalesExpensesOverview(salesExpenses ?? [])
     setDepositsOverview(deposits ?? [])
@@ -264,6 +281,13 @@ export function AdminDashboard() {
     const checks = checksRaw ?? []
     setUndepositedChecksTotal(checks.reduce((s, r) => s + Number(r.amount), 0))
     setUndepositedChecksCount(checks.length)
+
+    const totalCogs = (cogsRaw ?? []).reduce((sum: number, row: any) =>
+      sum + (row.stock_in_items || []).reduce((s: number, i: any) => s + Number(i.total ?? 0), 0), 0
+    )
+    setRangeCogs(totalCogs)
+    setCogsRawData(cogsRaw ?? [])
+    setShiftTotalsRawData(shiftTotalsRaw ?? [])
 
     setOverviewLoading(false)
   }, [selectedBranch, dateRangeOption, customFrom, customTo])
@@ -398,6 +422,34 @@ export function AdminDashboard() {
     return total
   }, [dateRangeOption, rangeExpensesByType, totalDailyExpenses, includesOpenShift])
 
+  const monthlyPL = useMemo(() => {
+    if (dateRangeOption === "today") return []
+    const monthMap: Record<string, { month: string; sales: number; cogs: number; expenses: Record<string, number> }> = {}
+
+    salesExpensesOverview.forEach(row => {
+      const month = row.date.substring(0, 7)
+      if (!monthMap[month]) monthMap[month] = { month, sales: 0, cogs: 0, expenses: {} }
+      monthMap[month].sales += Number(row.total_sales)
+    })
+
+    cogsRawData.forEach((row: any) => {
+      const month = (row.created_at as string).substring(0, 7)
+      if (!monthMap[month]) monthMap[month] = { month, sales: 0, cogs: 0, expenses: {} }
+      monthMap[month].cogs += (row.stock_in_items || []).reduce((s: number, i: any) => s + Number(i.total ?? 0), 0)
+    })
+
+    shiftTotalsRawData
+      .filter((r: any) => r.transaction_type === 2)
+      .forEach((r: any) => {
+        const month = (r.created_at as string).substring(0, 7)
+        if (!monthMap[month]) monthMap[month] = { month, sales: 0, cogs: 0, expenses: {} }
+        const typeName = expenseTypeNames[r.payment_type] || `Type ${r.payment_type}`
+        monthMap[month].expenses[typeName] = (monthMap[month].expenses[typeName] || 0) + Number(r.total_amount)
+      })
+
+    return Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month))
+  }, [dateRangeOption, salesExpensesOverview, cogsRawData, shiftTotalsRawData])
+
   const groupBy = useMemo((): "day" | "month" => {
     if (!activeRange.from || !activeRange.to) return "day"
     const diff =
@@ -477,7 +529,7 @@ export function AdminDashboard() {
   )
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {/* Status row */}
       <div className="flex items-center gap-3">
         {hasOpenShift ? (
@@ -491,7 +543,7 @@ export function AdminDashboard() {
             No Open Shift
           </span>
         )}
-        <span className="text-xs font-mono text-gray-400 tracking-wider">
+        <span className="hidden sm:inline text-xs font-mono text-gray-400 tracking-wider">
           {new Date().toLocaleDateString("en-PH", { timeZone: "Asia/Manila",
             weekday: "long",
             year: "numeric",
@@ -499,10 +551,17 @@ export function AdminDashboard() {
             day: "numeric",
           })}
         </span>
+        <span className="sm:hidden text-xs font-mono text-gray-400 tracking-wider">
+          {new Date().toLocaleDateString("en-PH", { timeZone: "Asia/Manila",
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </span>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
         {/* Branch filter */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0 w-16">Branch:</span>
@@ -532,7 +591,7 @@ export function AdminDashboard() {
         </div>
 
         {/* Period filter */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap md:justify-end">
           <span className="text-xs font-mono text-gray-400 uppercase tracking-wider shrink-0 w-16">Period:</span>
           {(["today", "mtd", "last_month", "year", "custom"] as DateRangeOption[]).map((opt) => (
             <button
@@ -597,20 +656,20 @@ export function AdminDashboard() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <StatCard
           label={`${rangeLabel} Sales`}
           value={formatCurrency(totalRangeSales)}
           sub={dateRangeOption === "today" ? `${dailySales.length} transactions` : `closed shifts${includesOpenShift ? " + shift" : ""}`}
           loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
-          color="blue"
+          color="navy"
         />
         <StatCard
           label={`${rangeLabel} Expenses`}
           value={formatCurrency(totalRangeExpenses)}
           sub={dateRangeOption === "today" ? `${dailyExpenses.length} entries` : `closed shifts${includesOpenShift ? " + shift" : ""}`}
           loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
-          color="red"
+          color="blue"
         />
         <StatCard
           label="Net (Sales − Exp)"
@@ -624,19 +683,26 @@ export function AdminDashboard() {
           value={formatCurrency(totalDeposits)}
           sub="cash + check + gcash"
           loading={overviewLoading}
-          color="green"
+          color="blue"
         />
         <StatCard
           label="Undeposited Checks"
           value={formatCurrency(undepositedChecksTotal)}
           sub={`${undepositedChecksCount} check${undepositedChecksCount !== 1 ? "s" : ""} outstanding`}
           loading={overviewLoading}
-          color="amber"
+          color="gray"
+        />
+        <StatCard
+          label={`${rangeLabel} COGS`}
+          value={formatCurrency(rangeCogs)}
+          sub="stock-in purchases"
+          loading={overviewLoading}
+          color="navy"
         />
       </div>
 
       {/* Sales & expenses by branch/type */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <ChartCard
           title={`Sales by Branch — ${rangeLabel}`}
           subtitle={dateRangeOption === "today" ? "Current shift — updates in realtime" : `Closed shifts${includesOpenShift ? " + current shift" : ""}`}
@@ -661,7 +727,7 @@ export function AdminDashboard() {
       </div>
 
       {/* 7-day overview charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <ChartCard
           title={`Sales & Expenses — ${rangeLabel}`}
           subtitle={groupBy === "month" ? "Grouped by month" : "Grouped by day"}
@@ -672,24 +738,24 @@ export function AdminDashboard() {
             <AreaChart data={overviewData} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="gradSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.5} />
-                  <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#1d4ed8" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#1d4ed8" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gradExpenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.5} />
-                  <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#93c5fd" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#93c5fd" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis
                 dataKey="dateLabel"
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
+                tick={{ fontSize: 11, fontFamily: "sans-serif" }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
+                tick={{ fontSize: 11, fontFamily: "sans-serif" }}
                 axisLine={false}
                 tickLine={false}
                 width={40}
@@ -706,7 +772,7 @@ export function AdminDashboard() {
               <Area
                 type="monotone"
                 dataKey="sales"
-                stroke="#22d3ee"
+                stroke="#1d4ed8"
                 strokeWidth={2}
                 fill="url(#gradSales)"
                 dot={false}
@@ -714,7 +780,7 @@ export function AdminDashboard() {
               <Area
                 type="monotone"
                 dataKey="expenses"
-                stroke="#a78bfa"
+                stroke="#93c5fd"
                 strokeWidth={2}
                 fill="url(#gradExpenses)"
                 dot={false}
@@ -734,13 +800,13 @@ export function AdminDashboard() {
               <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis
                 dataKey="dateLabel"
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
+                tick={{ fontSize: 11, fontFamily: "sans-serif" }}
                 axisLine={false}
                 tickLine={false}
               />
               <YAxis
                 tickFormatter={(v) => `₱${(v / 1000).toFixed(0)}k`}
-                tick={{ fontSize: 11, fontFamily: "monospace" }}
+                tick={{ fontSize: 11, fontFamily: "sans-serif" }}
                 axisLine={false}
                 tickLine={false}
                 width={40}
@@ -754,13 +820,195 @@ export function AdminDashboard() {
                 }
               />
               <ChartLegend content={<ChartLegendContent />} />
-              <Bar dataKey="cash" stackId="a" fill="#22d3ee" maxBarSize={40} />
-              <Bar dataKey="check" stackId="a" fill="#a78bfa" maxBarSize={40} />
-              <Bar dataKey="gcash" stackId="a" fill="#38bdf8" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="cash" fill="#1e40af" radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="check" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={18} />
+              <Bar dataKey="gcash" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={18} />
             </BarChart>
           </ChartContainer>
         </ChartCard>
       </div>
+
+      {/* P&L Statement */}
+      {(() => {
+        const grossProfit = totalRangeSales - rangeCogs
+        const netProfit = grossProfit - totalRangeExpenses
+        const isLoading = overviewLoading || (dateRangeOption === "today" && dailyLoading)
+        const pct = (v: number, base: number) => base > 0 ? `${((Math.abs(v) / base) * 100).toFixed(1)}%` : ""
+        const allExpenseTypes = [...new Set([
+          ...expensesByType.map(e => e.type),
+          ...monthlyPL.flatMap(m => Object.keys(m.expenses)),
+        ])]
+        return (
+          <div className="border border-gray-200 p-4 sm:p-6">
+            <div className="mb-5">
+              <h3 className="text-sm font-sans font-medium tracking-wide uppercase text-gray-700">P&L Statement</h3>
+              <p className="text-xs font-sans text-gray-400 mt-0.5">{rangeLabel}</p>
+            </div>
+
+            {isLoading ? (
+              <div className="space-y-3">
+                {["w-1/2", "w-2/3", "w-1/2", "w-3/4", "w-1/3", "w-2/3", "w-1/2", "w-3/4"].map((w, i) => (
+                  <div key={i} className={`h-4 bg-gray-100 animate-pulse rounded ${w}`} />
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="font-mono text-sm border-collapse w-full min-w-[480px]">
+                  <thead>
+                    <tr>
+                      <th className="text-left py-2 pr-8 font-normal text-[10px] text-gray-400 uppercase tracking-widest w-44" />
+                      {monthlyPL.map(m => (
+                        <th key={m.month} className="text-right py-2 px-4 font-normal text-[10px] text-gray-400 uppercase tracking-widest whitespace-nowrap">
+                          {formatMonth(m.month)}
+                        </th>
+                      ))}
+                      <th className="text-right py-2 pl-4 font-medium text-[10px] text-gray-500 uppercase tracking-widest whitespace-nowrap">
+                        {monthlyPL.length > 1 ? "Total" : ""}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+
+                    {/* Total Sales */}
+                    <tr className="border-t border-gray-100">
+                      <td className="py-2 pr-8 text-gray-600">Total Sales</td>
+                      {monthlyPL.map(m => (
+                        <td key={m.month} className="py-2 px-4 text-right text-gray-800">
+                          <div className="flex items-baseline justify-end gap-2">
+                            <span className="tabular-nums">{formatCurrency(m.sales)}</span>
+                            <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">100%</span>
+                          </div>
+                        </td>
+                      ))}
+                      <td className="py-2 pl-4 text-right font-medium text-gray-800">
+                        <div className="flex items-baseline justify-end gap-2">
+                          <span className="tabular-nums">{formatCurrency(totalRangeSales)}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">100%</span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* COGS */}
+                    <tr className="border-t border-gray-100">
+                      <td className="py-2 pr-8 text-gray-600">COGS</td>
+                      {monthlyPL.map(m => (
+                        <td key={m.month} className="py-2 px-4 text-right text-blue-300">
+                          <div className="flex items-baseline justify-end gap-2">
+                            <span className="tabular-nums">{m.cogs > 0 ? `(${formatCurrency(m.cogs)})` : "—"}</span>
+                            <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(m.cogs, m.sales)}</span>
+                          </div>
+                        </td>
+                      ))}
+                      <td className="py-2 pl-4 text-right font-medium text-blue-300">
+                        <div className="flex items-baseline justify-end gap-2">
+                          <span className="tabular-nums">{rangeCogs > 0 ? `(${formatCurrency(rangeCogs)})` : "—"}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(rangeCogs, totalRangeSales)}</span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Gross Profit */}
+                    <tr className="border-t border-gray-200 bg-gray-50">
+                      <td className="py-2 pr-8 font-medium text-gray-700">Gross Profit</td>
+                      {monthlyPL.map(m => {
+                        const gp = m.sales - m.cogs
+                        return (
+                          <td key={m.month} className={`py-2 px-4 text-right font-medium ${gp >= 0 ? "text-blue-800" : "text-red-600"}`}>
+                            <div className="flex items-baseline justify-end gap-2">
+                              <span className="tabular-nums">{formatCurrency(gp)}</span>
+                              <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(gp, m.sales)}</span>
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className={`py-2 pl-4 text-right font-medium ${grossProfit >= 0 ? "text-blue-800" : "text-red-600"}`}>
+                        <div className="flex items-baseline justify-end gap-2">
+                          <span className="tabular-nums">{formatCurrency(grossProfit)}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(grossProfit, totalRangeSales)}</span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expense rows */}
+                    {allExpenseTypes.length === 0 ? (
+                      <tr className="border-t border-gray-100">
+                        <td colSpan={monthlyPL.length + 2} className="py-2 pr-8 pl-4 text-xs text-gray-400">No expenses</td>
+                      </tr>
+                    ) : allExpenseTypes.map(typeName => {
+                      const total = expensesByType.find(e => e.type === typeName)?.amount ?? 0
+                      return (
+                        <tr key={typeName} className="border-t border-gray-100">
+                          <td className="py-1.5 pr-8 pl-4 text-xs text-gray-500">{typeName}</td>
+                          {monthlyPL.map(m => (
+                            <td key={m.month} className="py-1.5 px-4 text-right text-xs text-gray-600">
+                              <div className="flex items-baseline justify-end gap-2">
+                                <span className="tabular-nums">{m.expenses[typeName] ? `(${formatCurrency(m.expenses[typeName])})` : "—"}</span>
+                                <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{m.expenses[typeName] ? pct(m.expenses[typeName], m.sales) : ""}</span>
+                              </div>
+                            </td>
+                          ))}
+                          <td className="py-1.5 pl-4 text-right text-xs text-gray-600">
+                            <div className="flex items-baseline justify-end gap-2">
+                              <span className="tabular-nums">{total > 0 ? `(${formatCurrency(total)})` : "—"}</span>
+                              <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{total > 0 ? pct(total, totalRangeSales) : ""}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+
+                    {/* Total Expenses */}
+                    <tr className="border-t border-gray-200">
+                      <td className="py-2 pr-8 text-gray-600">Total Expenses</td>
+                      {monthlyPL.map(m => {
+                        const exp = Object.values(m.expenses).reduce((s, v) => s + v, 0)
+                        return (
+                          <td key={m.month} className="py-2 px-4 text-right text-blue-300">
+                            <div className="flex items-baseline justify-end gap-2">
+                              <span className="tabular-nums">{exp > 0 ? `(${formatCurrency(exp)})` : "—"}</span>
+                              <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(exp, m.sales)}</span>
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className="py-2 pl-4 text-right font-medium text-blue-300">
+                        <div className="flex items-baseline justify-end gap-2">
+                          <span className="tabular-nums">{totalRangeExpenses > 0 ? `(${formatCurrency(totalRangeExpenses)})` : "—"}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(totalRangeExpenses, totalRangeSales)}</span>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Net Profit */}
+                    <tr className="border-t-2 border-gray-800">
+                      <td className="py-3 pr-8 font-semibold text-gray-900">Net Profit</td>
+                      {monthlyPL.map(m => {
+                        const exp = Object.values(m.expenses).reduce((s, v) => s + v, 0)
+                        const np = m.sales - m.cogs - exp
+                        return (
+                          <td key={m.month} className={`py-3 px-4 text-right font-semibold ${np >= 0 ? "text-blue-800" : "text-red-600"}`}>
+                            <div className="flex items-baseline justify-end gap-2">
+                              <span className="tabular-nums">{formatCurrency(np)}</span>
+                              <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(np, m.sales)}</span>
+                            </div>
+                          </td>
+                        )
+                      })}
+                      <td className={`py-3 pl-4 text-right font-semibold ${netProfit >= 0 ? "text-blue-800" : "text-red-600"}`}>
+                        <div className="flex items-baseline justify-end gap-2">
+                          <span className="tabular-nums">{formatCurrency(netProfit)}</span>
+                          <span className="text-[10px] text-gray-400 tabular-nums w-10 text-right">{pct(netProfit, totalRangeSales)}</span>
+                        </div>
+                      </td>
+                    </tr>
+
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -776,11 +1024,11 @@ function BarList({ items }: { items: { label: string; amount: number; fill: stri
         return (
           <div key={idx}>
             <div className="flex items-baseline justify-between mb-1">
-              <span className="text-xs font-mono text-gray-600">
+              <span className="text-xs font-sans text-gray-600">
                 {item.label}{" "}
                 <span className="text-gray-400">{pct}%</span>
               </span>
-              <span className="text-xs font-mono text-gray-500 tabular-nums">{formatCurrency(item.amount)}</span>
+              <span className="text-xs font-sans text-gray-500 tabular-nums">{formatCurrency(item.amount)}</span>
             </div>
             <div className="h-1.5 w-full bg-gray-100 rounded-sm overflow-hidden">
               <div
@@ -806,25 +1054,25 @@ function StatCard({
   value: string
   sub: string
   loading: boolean
-  color: "blue" | "red" | "green" | "gray" | "amber"
+  color: "navy" | "blue" | "red" | "green" | "gray"
 }) {
   const colorClass = {
+    navy:  "text-blue-900",
     blue:  "text-blue-600",
     red:   "text-red-600",
     green: "text-emerald-600",
     gray:  "text-gray-600",
-    amber: "text-amber-600",
   }[color]
 
   return (
-    <div className="border border-gray-200 p-5 space-y-3">
-      <p className="text-xs font-mono tracking-wider text-gray-400 uppercase">{label}</p>
+    <div className="border border-gray-200 p-3 sm:p-5 space-y-2 sm:space-y-3">
+      <p className="text-[10px] sm:text-xs font-sans tracking-wider text-gray-400 uppercase leading-tight">{label}</p>
       {loading ? (
-        <div className="h-7 w-32 bg-gray-100 animate-pulse rounded" />
+        <div className="h-6 w-24 sm:h-7 sm:w-32 bg-gray-100 animate-pulse rounded" />
       ) : (
-        <p className={`text-xl font-mono font-medium tabular-nums ${colorClass}`}>{value}</p>
+        <p className="text-base sm:text-xl font-sans font-medium tabular-nums break-all text-gray-900">{value}</p>
       )}
-      <p className="text-xs font-mono text-gray-400">{sub}</p>
+      <p className="text-[10px] sm:text-xs font-sans text-gray-400">{sub}</p>
     </div>
   )
 }
@@ -847,10 +1095,10 @@ function ChartCard({
   children?: React.ReactNode
 }) {
   return (
-    <div className="border border-gray-200 p-6 flex flex-col gap-4">
+    <div className="border border-gray-200 p-4 sm:p-6 flex flex-col gap-4">
       <div className="shrink-0">
-        <h3 className="text-sm font-medium tracking-wide">{title}</h3>
-        <p className="text-xs font-mono text-gray-400 mt-0.5">{subtitle}</p>
+        <h3 className="text-sm font-sans font-medium tracking-wide">{title}</h3>
+        <p className="text-xs font-sans text-gray-400 mt-0.5">{subtitle}</p>
       </div>
       <div className={chartClassName ?? "flex-1 min-h-[200px] sm:min-h-[260px]"}>
         {loading ? (

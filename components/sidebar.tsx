@@ -28,6 +28,7 @@ const branchItems = [
 const bodegaItems = [
   { name: "Pawa", slug: "pawa" },
   { name: "Zone 2", slug: "zone-2" },
+  { name: "Hardware", slug: "hardware" },
 ]
 
 interface SidebarItem {
