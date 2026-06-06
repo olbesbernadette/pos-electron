@@ -345,7 +345,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
   // Update released qty
   const updateQty = (id: string, qty: number) => {
     setReleaseItems(prev =>
-      prev.map(item => item.id === id ? { ...item, releasedQty: Math.max(0, qty) } : item)
+      prev.map(item => item.id === id ? { ...item, releasedQty: qty } : item)
     )
   }
 
@@ -417,8 +417,8 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
       setAddItemError("Reference number is required")
       return
     }
-    if (releaseItems.some(item => item.releasedQty <= 0)) {
-      setAddItemError("All items must have a quantity greater than 0")
+    if (releaseItems.some(item => item.releasedQty === 0)) {
+      setAddItemError("All items must have a non-zero quantity")
       return
     }
 
@@ -937,7 +937,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
               </div>
             ) : (
               releaseItems.map((item, index) => (
-                <div key={item.id} className="grid grid-cols-[80px_1fr_80px_80px_80px_60px] gap-3 px-4 py-3 border-b border-gray-100 items-center last:border-b-0">
+                <div key={item.id} className={`grid grid-cols-[80px_1fr_80px_80px_80px_60px] gap-3 px-4 py-3 border-b border-gray-100 items-center last:border-b-0 ${item.releasedQty < 0 ? "bg-orange-50" : ""}`}>
                   <span className="px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600 whitespace-nowrap text-center">{item.code || "-"}</span>
                   <span className="font-mono text-sm text-gray-600 truncate">{item.product}</span>
                   <span className="font-mono text-sm text-gray-600">{item.unit || "pc"}</span>
@@ -947,12 +947,11 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                       if (el) qtyInputRefs.current[item.id] = el
                     }}
                     type="number"
-                    min="0"
                     value={item.releasedQty}
                     onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => handleQtyKeyDown(e, index)}
-                    className="w-full px-2 py-1 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+                    className={`w-full px-2 py-1 border font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield ${item.releasedQty < 0 ? "border-orange-300 text-orange-700" : "border-gray-200"}`}
                   />
                   <input
                     data-cogs-id={item.id}
@@ -985,7 +984,7 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
               </div>
             ) : (
               releaseItems.map((item, index) => (
-                <div key={item.id} className="border border-gray-200 p-4 space-y-3">
+                <div key={item.id} className={`border p-4 space-y-3 ${item.releasedQty < 0 ? "border-orange-300 bg-orange-50" : "border-gray-200"}`}>
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex-1">
                       <p className="font-mono text-sm text-gray-600">{item.product}</p>
@@ -1004,6 +1003,9 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                   <div className="flex items-center gap-2">
                     <span className="inline-block px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600">{item.code || "-"}</span>
                     <span className="inline-block px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600">{item.unit || "pc"}</span>
+                    {item.releasedQty < 0 && (
+                      <span className="inline-block px-1 py-0.5 bg-orange-100 border border-orange-300 text-[10px] font-mono rounded-full text-orange-700">deduction</span>
+                    )}
                   </div>
 
                   <div className="border-t border-gray-200"></div>
@@ -1017,12 +1019,11 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                           if (el) qtyInputRefs.current[item.id] = el
                         }}
                         type="number"
-                        min="0"
                         value={item.releasedQty}
                         onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
                         onFocus={(e) => e.target.select()}
                         onKeyDown={(e) => handleQtyKeyDown(e, index)}
-                        className="w-full px-2 py-2 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
+                        className={`w-full px-2 py-2 border font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield ${item.releasedQty < 0 ? "border-orange-300 text-orange-700" : "border-gray-200"}`}
                       />
                     </div>
                     <div>
