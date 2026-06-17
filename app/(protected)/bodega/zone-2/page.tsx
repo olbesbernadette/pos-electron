@@ -66,11 +66,15 @@ export default function BodegaZone2Page() {
 
         {/* Content Area */}
         <div>
-          {selectedAction === "out" && <BodegaForm warehouseId={2} />}
-          
-          {selectedAction === "in" && <BodegaInForm warehouseId={2} />}
-          
-          {selectedAction === "logs" && <BodegaLogs warehouseId={2} />}
+          <div className={selectedAction === "out" ? "" : "hidden"}>
+            <BodegaForm warehouseId={2} />
+          </div>
+          <div className={selectedAction === "in" ? "" : "hidden"}>
+            <BodegaInForm warehouseId={2} />
+          </div>
+          <div className={selectedAction === "logs" ? "" : "hidden"}>
+            <BodegaLogs warehouseId={2} />
+          </div>
         </div>
       </div>
     </>

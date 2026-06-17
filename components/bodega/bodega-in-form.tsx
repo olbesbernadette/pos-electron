@@ -946,12 +946,22 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                     ref={(el) => {
                       if (el) qtyInputRefs.current[item.id] = el
                     }}
-                    type="number"
-                    value={item.releasedQty}
-                    onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
+                    type="text"
+                    inputMode="numeric"
+                    defaultValue={item.releasedQty}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      if (raw === "" || raw === "-") return
+                      const parsed = parseInt(raw, 10)
+                      if (!isNaN(parsed)) updateQty(item.id, parsed)
+                    }}
+                    onBlur={(e) => {
+                      const parsed = parseInt(e.target.value, 10)
+                      if (isNaN(parsed)) { updateQty(item.id, 0); e.target.value = "0" }
+                    }}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => handleQtyKeyDown(e, index)}
-                    className={`w-full px-2 py-1 border font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield ${item.releasedQty < 0 ? "border-orange-300 text-orange-700" : "border-gray-200"}`}
+                    className={`w-full px-2 py-1 border font-mono text-sm text-center focus:outline-none focus:border-black transition-colors ${item.releasedQty < 0 ? "border-orange-300 text-orange-700" : "border-gray-200"}`}
                   />
                   <input
                     data-cogs-id={item.id}
@@ -1018,12 +1028,22 @@ export function BodegaInForm({ warehouseId }: BodegaInFormProps) {
                         ref={(el) => {
                           if (el) qtyInputRefs.current[item.id] = el
                         }}
-                        type="number"
-                        value={item.releasedQty}
-                        onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 0)}
+                        type="text"
+                        inputMode="numeric"
+                        defaultValue={item.releasedQty}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          if (raw === "" || raw === "-") return
+                          const parsed = parseInt(raw, 10)
+                          if (!isNaN(parsed)) updateQty(item.id, parsed)
+                        }}
+                        onBlur={(e) => {
+                          const parsed = parseInt(e.target.value, 10)
+                          if (isNaN(parsed)) { updateQty(item.id, 0); e.target.value = "0" }
+                        }}
                         onFocus={(e) => e.target.select()}
                         onKeyDown={(e) => handleQtyKeyDown(e, index)}
-                        className={`w-full px-2 py-2 border font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield ${item.releasedQty < 0 ? "border-orange-300 text-orange-700" : "border-gray-200"}`}
+                        className={`w-full px-2 py-2 border font-mono text-sm text-center focus:outline-none focus:border-black transition-colors ${item.releasedQty < 0 ? "border-orange-300 text-orange-700" : "border-gray-200"}`}
                       />
                     </div>
                     <div>

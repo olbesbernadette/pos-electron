@@ -66,11 +66,15 @@ export default function BodegaPawaPage() {
 
         {/* Content Area */}
         <div>
-          {selectedAction === "out" && <BodegaForm warehouseId={1} />}
-          
-          {selectedAction === "in" && <BodegaInForm warehouseId={1} />}
-          
-          {selectedAction === "logs" && <BodegaLogs warehouseId={1} />}
+          <div className={selectedAction === "out" ? "" : "hidden"}>
+            <BodegaForm warehouseId={1} />
+          </div>
+          <div className={selectedAction === "in" ? "" : "hidden"}>
+            <BodegaInForm warehouseId={1} />
+          </div>
+          <div className={selectedAction === "logs" ? "" : "hidden"}>
+            <BodegaLogs warehouseId={1} />
+          </div>
         </div>
       </div>
     </>
