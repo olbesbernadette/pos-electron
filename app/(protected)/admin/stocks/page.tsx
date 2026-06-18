@@ -14,6 +14,7 @@ type StocksView = "stocks" | "in" | "out"
 const WAREHOUSES = [
   { id: 1, name: "Pawa" },
   { id: 2, name: "Zone 2" },
+  { id: 3, name: "Hardware" },
 ]
 
 export default function AdminStocksPage() {

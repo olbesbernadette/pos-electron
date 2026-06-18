@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client"
 const WAREHOUSES = [
   { id: 1, name: "Pawa" },
   { id: 2, name: "Zone 2" },
+  { id: 3, name: "Hardware" },
 ]
 
 const getWarehouseName = (id: number) => WAREHOUSES.find(w => w.id === id)?.name ?? `WH${id}`
@@ -75,6 +76,7 @@ export function StockLogsTable({ type, searchQuery, selectedWarehouseId }: Stock
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
   const [editingCogsValue, setEditingCogsValue] = useState<number | "">("")
   const [isSaving, setIsSaving] = useState(false)
+  const [sortField, setSortField] = useState<"date" | "product">("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
   const fetchLogs = async () => {
@@ -152,16 +154,17 @@ export function StockLogsTable({ type, searchQuery, selectedWarehouseId }: Stock
       ? logs
       : logs.filter(l => l.warehouse_id === selectedWarehouseId)
 
-    const sorted = [...warehouseFiltered].sort((a, b) => {
-      const ta = new Date(a.created_at).getTime()
-      const tb = new Date(b.created_at).getTime()
-      return sortDir === "asc" ? ta - tb : tb - ta
-    })
+    const dateSorted = sortField === "date"
+      ? [...warehouseFiltered].sort((a, b) => {
+          const ta = new Date(a.created_at).getTime()
+          const tb = new Date(b.created_at).getTime()
+          return sortDir === "asc" ? ta - tb : tb - ta
+        })
+      : warehouseFiltered
 
     const q = searchQuery.trim().toLowerCase()
 
-    let n = 0
-    return sorted.flatMap(entry =>
+    const rows = dateSorted.flatMap(entry =>
       entry.items
         .filter(item => {
           if (!q) return true
@@ -174,11 +177,9 @@ export function StockLogsTable({ type, searchQuery, selectedWarehouseId }: Stock
             (entry.remarks ?? "").toLowerCase().includes(q)
           )
         })
-        .map(item => {
-          n++
-          return {
-          rowKey: `${entry.id}-${item.stock_in_item_id ?? n}`,
-          rowNum: n,
+        .map((item, i) => ({
+          rowKey: `${entry.id}-${item.stock_in_item_id ?? `i${i}`}`,
+          rowNum: 0,
           transactionId: entry.id,
           warehouse_id: entry.warehouse_id,
           created_at: entry.created_at,
@@ -194,10 +195,19 @@ export function StockLogsTable({ type, searchQuery, selectedWarehouseId }: Stock
           quantity: item.quantity,
           cogs: item.cogs,
           total: item.total,
-        }
-      })
+        }))
     )
-  }, [logs, selectedWarehouseId, searchQuery, sortDir])
+
+    if (sortField === "product") {
+      rows.sort((a, b) => {
+        const cmp = a.product_name.localeCompare(b.product_name)
+        return sortDir === "asc" ? cmp : -cmp
+      })
+    }
+
+    rows.forEach((r, i) => { r.rowNum = i + 1 })
+    return rows
+  }, [logs, selectedWarehouseId, searchQuery, sortField, sortDir])
 
   const handleDelete = async (transactionId: number) => {
     setDeletingId(transactionId)
@@ -272,7 +282,16 @@ export function StockLogsTable({ type, searchQuery, selectedWarehouseId }: Stock
               <div className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase">Code</div>
               <div className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase text-right">Qty</div>
               <div className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase">Unit</div>
-              <div className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase">Product</div>
+              <button
+                onClick={() => {
+                  if (sortField === "product") setSortDir(d => d === "asc" ? "desc" : "asc")
+                  else { setSortField("product"); setSortDir("asc") }
+                }}
+                className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase flex items-center gap-1 hover:text-black transition-colors"
+              >
+                Product
+                {sortField === "product" && (sortDir === "asc" ? <CaretUp className="w-3 h-3" /> : <CaretDown className="w-3 h-3" />)}
+              </button>
               {type === "IN" && (
                 <>
                   <div className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase">COGS</div>
@@ -280,11 +299,14 @@ export function StockLogsTable({ type, searchQuery, selectedWarehouseId }: Stock
                 </>
               )}
               <button
-                onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}
+                onClick={() => {
+                  if (sortField === "date") setSortDir(d => d === "asc" ? "desc" : "asc")
+                  else { setSortField("date"); setSortDir("desc") }
+                }}
                 className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase flex items-center gap-1 hover:text-black transition-colors whitespace-nowrap"
               >
                 Date
-                {sortDir === "asc" ? <CaretUp className="w-3 h-3" /> : <CaretDown className="w-3 h-3" />}
+                {sortField === "date" && (sortDir === "asc" ? <CaretUp className="w-3 h-3" /> : <CaretDown className="w-3 h-3" />)}
               </button>
               <div className="px-3 py-3 text-xs font-sans text-gray-500 tracking-wider uppercase">
                 {type === "IN" ? "Reference" : "Customer"}

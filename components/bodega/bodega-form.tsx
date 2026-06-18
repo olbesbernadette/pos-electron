@@ -418,6 +418,7 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
                     onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 1)}
                     onFocus={(e) => e.target.select()}
                     onKeyDown={(e) => handleQtyKeyDown(e, index)}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-2 py-1 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
                   />
                   <button
@@ -472,6 +473,7 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
                       onChange={(e) => updateQty(item.id, parseInt(e.target.value) || 1)}
                       onFocus={(e) => e.target.select()}
                       onKeyDown={(e) => handleQtyKeyDown(e, index)}
+                      onWheel={(e) => e.currentTarget.blur()}
                       className="w-full px-2 py-2 border border-gray-200 font-mono text-sm text-center focus:outline-none focus:border-black transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-moz-appearance]:textfield"
                     />
                   </div>
