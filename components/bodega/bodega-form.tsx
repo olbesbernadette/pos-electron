@@ -386,9 +386,10 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
 
           {/* Desktop Table */}
           <div className="hidden md:block border border-gray-200">
-            <div className="grid grid-cols-[80px_1fr_80px_80px_60px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="grid grid-cols-[80px_1fr_72px_80px_80px_60px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Code</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Product</span>
+              <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Stock</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Unit</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Qty</span>
               <span className="text-xs font-mono text-gray-500 tracking-wider uppercase">Action</span>
@@ -402,12 +403,15 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
               selectedItems.map((item, index) => (
                 <div
                   key={item.id}
-                  className="grid grid-cols-[80px_1fr_80px_80px_60px] gap-3 px-4 py-3 border-b border-gray-100 items-center last:border-b-0"
+                  className="grid grid-cols-[80px_1fr_72px_80px_80px_60px] gap-3 px-4 py-3 border-b border-gray-100 items-center last:border-b-0"
                 >
                   <span className="px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600 whitespace-nowrap text-center">
                     {item.code || "-"}
                   </span>
                   <span className="font-mono text-sm text-gray-600 truncate">{item.name}</span>
+                  <span className={`font-mono text-sm ${item.qty > item.availableQty ? "text-red-500" : "text-gray-600"}`}>
+                    {item.availableQty}
+                  </span>
                   <span className="font-mono text-sm text-gray-600">{item.unit || "pc"}</span>
                   <input
                     data-item-id={item.id}
@@ -456,6 +460,9 @@ export function BodegaForm({ warehouseId }: BodegaFormProps) {
                   <div className="flex items-center gap-2">
                     <span className="inline-block px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600">
                       {item.code || "-"}
+                    </span>
+                    <span className={`inline-block px-1 py-0.5 border text-[10px] font-mono rounded-full ${item.qty > item.availableQty ? "bg-red-50 border-red-200 text-red-600" : "bg-white border-gray-200 text-gray-600"}`}>
+                      {item.availableQty} avail
                     </span>
                     <span className="inline-block px-1 py-0.5 bg-white border border-gray-200 text-[10px] font-mono rounded-full text-gray-600">
                       {item.unit || "pc"}
