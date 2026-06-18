@@ -131,6 +131,15 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
 
   useEffect(() => {
     fetchLogs()
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`bodega_logs_${warehouseId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "stock_in", filter: `warehouse_id=eq.${warehouseId}` }, () => fetchLogs())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "stock_out", filter: `warehouse_id=eq.${warehouseId}` }, () => fetchLogs())
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
   }, [warehouseId])
 
   const handleDelete = async (entry: LogEntry) => {
