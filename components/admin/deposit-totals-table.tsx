@@ -519,6 +519,25 @@ setBreakdownDialogData({
         </div>
       </div>
 
+      {/* Selected total — upper right of table */}
+      {table.getFilteredSelectedRowModel().rows.length > 0 && (
+        <div className="flex justify-end">
+          <div className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-md bg-gray-50">
+            <span className="text-xs font-mono text-gray-500">
+              {table.getFilteredSelectedRowModel().rows.length} row{table.getFilteredSelectedRowModel().rows.length !== 1 ? "s" : ""} selected —
+            </span>
+            <span className="text-sm font-mono font-semibold">
+              {formatCurrency(
+                table.getFilteredSelectedRowModel().rows.reduce(
+                  (sum, row) => sum + row.original.total_amount,
+                  0
+                )
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="border border-gray-200 rounded-md">
         <Table>

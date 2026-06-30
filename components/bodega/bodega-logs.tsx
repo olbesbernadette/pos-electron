@@ -198,25 +198,49 @@ export function BodegaLogs({ warehouseId }: BodegaLogsProps) {
     }
   }
 
-  const filteredLogs = filter === "ALL" ? logs : logs.filter(l => l.type === filter)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const filteredLogs = logs
+    .filter(l => filter === "ALL" || l.type === filter)
+    .filter(l => {
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        String(l.id).includes(q) ||
+        (l.reference ?? "").toLowerCase().includes(q) ||
+        (l.supplier_name ?? "").toLowerCase().includes(q) ||
+        (l.customer_name ?? "").toLowerCase().includes(q) ||
+        (l.remarks ?? "").toLowerCase().includes(q) ||
+        l.items.some(item => item.product_name.toLowerCase().includes(q) || item.code.toLowerCase().includes(q))
+      )
+    })
 
   return (
     <div className="px-6 pb-6">
-      {/* Filter Tabs */}
-      <div className="flex gap-2 mb-6">
-        {(["ALL", "IN", "OUT"] as FilterType[]).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-2 text-xs font-mono tracking-widest border transition-colors ${
-              filter === f
-                ? "bg-black text-white border-black"
-                : "bg-white text-gray-600 border-gray-200 hover:border-black"
-            }`}
-          >
-            {f === "ALL" ? "ALL" : f === "IN" ? "STOCK IN" : "STOCK OUT"}
-          </button>
-        ))}
+      {/* Filter Tabs + Search */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="flex gap-2">
+          {(["ALL", "IN", "OUT"] as FilterType[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-4 py-2 text-xs font-mono tracking-widest border transition-colors ${
+                filter === f
+                  ? "bg-black text-white border-black"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-black"
+              }`}
+            >
+              {f === "ALL" ? "ALL" : f === "IN" ? "STOCK IN" : "STOCK OUT"}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          placeholder="Search by reference, supplier, customer, product..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="flex-1 px-3 py-2 text-xs font-mono border border-gray-200 focus:outline-none focus:border-black transition-colors placeholder:text-gray-400"
+        />
       </div>
 
       {loading ? (
