@@ -4,6 +4,9 @@ import { ArrowLeft, ShieldWarning } from "@phosphor-icons/react"
 import Link from "next/link"
 import { Sidebar } from "@/components/sidebar"
 import { useAuth } from "@/contexts/auth-context"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { CustomerCreditSummary } from "@/components/admin/customer-credit-summary"
+import { CustomerInvoiceList } from "@/components/admin/customer-invoice-list"
 
 export default function AdminCustomersPage() {
   const { isAdmin } = useAuth()
@@ -14,7 +17,7 @@ export default function AdminCustomersPage() {
         <div className="text-center">
           <ShieldWarning className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <h1 className="text-xl font-medium tracking-wide mb-2">Access Denied</h1>
-          <p className="text-xs text-gray-500 font-mono tracking-wider mb-6">
+          <p className="text-xs text-gray-500 font-sans tracking-wider mb-6">
             You do not have permission to access this page.
           </p>
           <Link
@@ -43,9 +46,19 @@ export default function AdminCustomersPage() {
             <span className="tracking-widest uppercase">Back to Admin</span>
           </Link>
         </div>
-        <div className="border border-gray-200 p-12 text-center">
-          <p className="text-gray-400 text-sm tracking-wider">Customers content coming soon</p>
-        </div>
+
+        <Tabs defaultValue="summary">
+          <TabsList className="mb-6">
+            <TabsTrigger value="summary">Summary</TabsTrigger>
+            <TabsTrigger value="invoices">Invoice List</TabsTrigger>
+          </TabsList>
+          <TabsContent value="summary">
+            <CustomerCreditSummary />
+          </TabsContent>
+          <TabsContent value="invoices">
+            <CustomerInvoiceList />
+          </TabsContent>
+        </Tabs>
       </section>
     </div>
   )

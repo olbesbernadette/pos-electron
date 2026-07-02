@@ -130,34 +130,65 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    if (!hasOpenShift || !currentShiftId) {
-      return
-    }
 
-    // Prevent double-clicks
-    if (isSubmitting) {
-      return
-    }
+    if (!hasOpenShift || !currentShiftId) return
+    if (isSubmitting) return
 
     setIsSubmitting(true)
     setSubmitError(null)
 
     const supabase = createClient()
     const sales = parseFloat(parseCurrency(salesAmount)) || 0
-    // payment_amount: check uses checkAmount, credit defaults to 0, others use paymentAmount
-    let payment = 0
-    if (selectedPayment === 3) {
-      payment = parseFloat(parseCurrency(checkAmount)) || 0
-    } else if (selectedPayment === 4) {
-      payment = 0 // Credit payments default to 0
-    } else {
-      payment = parseFloat(parseCurrency(paymentAmount)) || 0
+
+    // Credit bypasses shift_transactions entirely — it is not a sale yet
+    if (selectedPayment === 4) {
+      if (!customerId) {
+        setIsSubmitting(false)
+        setSubmitError("Please select a customer.")
+        return
+      }
+
+      const currentIdempotencyKey = idempotencyKeyRef.current
+
+      const { error: creditError } = await supabase.from("credit_details").insert({
+        shift_id: currentShiftId,
+        customer_id: customerId,
+        invoice_no: invoiceNumber,
+        sales_amount: sales,
+        idempotency_key: currentIdempotencyKey,
+      })
+
+      if (creditError) {
+        // Duplicate key — insert already succeeded on a previous attempt, safe to treat as success
+        if (creditError.code !== "23505") {
+          setIsSubmitting(false)
+          setSubmitError("Failed to record credit. Please try again.")
+          return
+        }
+      }
+
+      setIsSubmitting(false)
+      toast.success("Credit recorded successfully")
+      resetForm()
+      idempotencyKeyRef.current = generateIdempotencyKey()
+      setTimeout(() => salesAmountRef.current?.focus(), 100)
+      return
     }
+
+    // Cash, Gcash, Check — insert into shift_transactions
+    if (isCreditPayment && !customerId) {
+      setIsSubmitting(false)
+      setSubmitError("Please select a customer.")
+      return
+    }
+
+    const payment =
+      selectedPayment === 3
+        ? parseFloat(parseCurrency(checkAmount)) || 0
+        : parseFloat(parseCurrency(paymentAmount)) || 0
 
     const currentIdempotencyKey = idempotencyKeyRef.current
 
-    // Determine details1, details2, details3 based on payment type and branch
     let details1: string | null = needsShiftFields && shiftDate ? shiftDate : null
     let details2: string | null = needsShiftFields && shiftNumber ? shiftNumber : null
     let details3: string | null = null
@@ -168,17 +199,9 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
       details3 = checkDate || null
     }
 
-    // Determine status: default 1 (undeposited), but Credit (4) = status 3 (receivable)
-    const status = selectedPayment === 4 ? 3 : 1
-
-    // Retry logic for network failures
     let transactionData: { id: number } | null = null
-    let lastError: Error | null = null
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      // transaction_type: 1 = sales
-      // amount = sales amount, payment_amount = payment received
-      // change is auto-calculated by DB as (payment_amount - amount)
       const { data, error: transactionError } = await supabase
         .from("shift_transactions")
         .insert({
@@ -192,7 +215,8 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
           details1,
           details2,
           details3,
-          status,
+          status: 1,
+          customer_id: isCreditPayment && customerId ? customerId : null,
         })
         .select("id")
         .single()
@@ -202,24 +226,19 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
         break
       }
 
-      // Check if it's a duplicate key error (transaction already exists)
       if (transactionError?.code === "23505") {
-        // Duplicate idempotency key - fetch the existing transaction
         const { data: existingTransaction } = await supabase
           .from("shift_transactions")
           .select("id")
           .eq("idempotency_key", currentIdempotencyKey)
           .single()
-        
+
         if (existingTransaction) {
           transactionData = existingTransaction
           break
         }
       }
 
-      lastError = transactionError as Error
-      
-      // Wait before retry (exponential backoff)
       if (attempt < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 100))
       }
@@ -231,8 +250,7 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
       return
     }
 
-    // If payment type is check (3), insert check details
-    if (selectedPayment === 3 && transactionData) {
+    if (selectedPayment === 3) {
       const { error: checkError } = await supabase.from("check_details").insert({
         transaction_id: transactionData.id,
         bank_name: bankNameBranch,
@@ -248,44 +266,17 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
       }
     }
 
-    // If payment type is credit (4), insert credit details
-    if (selectedPayment === 4 && transactionData) {
-      if (!customerId) {
-        setIsSubmitting(false)
-        setSubmitError("Please select a customer.")
-        return
-      }
-
-      // Insert credit details with customer_id
-      const { error: creditError } = await supabase.from("credit_details").insert({
-        transaction_id: transactionData.id,
-        customer_id: customerId,
-        invoice_no: invoiceNumber,
-      })
-
-      if (creditError) {
-        setIsSubmitting(false)
-        setSubmitError("Failed to record credit details. Please try again.")
-        return
-      }
-    }
-
     setIsSubmitting(false)
     toast.success("Transaction recorded successfully")
     resetForm()
-    // Generate new idempotency key for next submission
     idempotencyKeyRef.current = generateIdempotencyKey()
-    
-    // Print receipt via Electron bridge or browser
+
     try {
       const paymentTypeLabel = paymentOptions.find(p => p.id === selectedPayment)?.label || "Payment"
       const change = parseFloat(parseCurrency(paymentAmount)) - sales
-      
-      // Check if running in Electron
       const isElectron = (window as any).electronAPI?.isElectron
-      
+
       if (isElectron) {
-        // Use Electron bridge for thermal printer
         const receiptLines = [
           { text: `Date: ${format(new Date(), "MM/dd/yyyy")}`, align: "left" as const, bold: false },
           { text: `Shift No: ${shiftNumber || ""}`, align: "left" as const, bold: false },
@@ -295,24 +286,18 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
           { text: "-----------------------------------------------", align: "center" as const },
           { text: `Change: ${formatCurrency(change.toString())}`, align: "left" as const, bold: true },
         ]
-        
+
         const result = await (window as any).electronAPI.printReceipt({ lines: receiptLines })
-        if (result.success) {
-          console.log("[v0] Receipt printed successfully via Electron bridge")
-        } else {
+        if (!result.success) {
           console.error("[v0] Electron print failed:", result.error)
           toast.error("Failed to print receipt")
         }
-      } else {
-        // Fallback: browser print (disabled for now)
-        console.log("[v0] Not in Electron environment, print would open dialog")
       }
     } catch (printError) {
       console.error("[v0] Print error:", printError)
       toast.error("Print error occurred")
     }
-    
-    // Focus sales amount for next entry
+
     setTimeout(() => salesAmountRef.current?.focus(), 100)
   }
 
@@ -447,8 +432,8 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
         </div>
       </div>
 
-      {/* Credit Payment Toggle */}
-      <div className="mb-6 flex items-center justify-between px-4 py-3 border border-gray-200">
+      {/* Credit Payment Toggle - hidden when Credit payment type is selected */}
+      <div className={`mb-6 flex items-center justify-between px-4 py-3 border border-gray-200 ${selectedPayment === 4 ? "hidden" : ""}`}>
         <label htmlFor="credit-payment" className="text-sm font-mono text-gray-600 cursor-pointer">
           Credit Payment
         </label>
@@ -459,37 +444,54 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
         />
       </div>
 
-      {/* Sales Amount - Always shown */}
-      <div className="mb-6">
-        <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase mb-2">
-          Sales
-        </label>
-        <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-mono">
-            PHP
-          </span>
-<input
-                ref={salesAmountRef}
-                id="sales-amount"
-                type="text"
-                inputMode="decimal"
-                value={salesAmount}
-                onChange={(e) => handleCurrencyChange(e.target.value, setSalesAmount)}
-                onKeyDown={(e) => handleKeyDown(e, "payment-amount")}
-            placeholder="0.00"
-            className="w-full pl-14 pr-10 py-3 border border-gray-200 font-mono text-right text-lg focus:outline-none focus:border-black transition-colors"
+      {isCreditPayment && selectedPayment !== 4 && (
+        <div className="mb-6">
+          <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase mb-2">
+            Customer
+          </label>
+          <CustomerCombobox
+            value={customerId}
+            onSelect={(id, name) => {
+              setCustomerId(id)
+              setCustomerName(name)
+            }}
           />
-          {salesAmount && (
-            <button
-              type="button"
-              onClick={() => setSalesAmount("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
         </div>
-      </div>
+      )}
+
+      {/* Sales Amount - Hidden for credit (shown after Invoice Number instead) */}
+      {selectedPayment !== 4 && (
+        <div className="mb-6">
+          <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase mb-2">
+            Sales
+          </label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-mono">
+              PHP
+            </span>
+            <input
+              ref={salesAmountRef}
+              id="sales-amount"
+              type="text"
+              inputMode="decimal"
+              value={salesAmount}
+              onChange={(e) => handleCurrencyChange(e.target.value, setSalesAmount)}
+              onKeyDown={(e) => handleKeyDown(e, "payment-amount")}
+              placeholder="0.00"
+              className="w-full pl-14 pr-10 py-3 border border-gray-200 font-mono text-right text-lg focus:outline-none focus:border-black transition-colors"
+            />
+            {salesAmount && (
+              <button
+                type="button"
+                onClick={() => setSalesAmount("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Credit-specific fields */}
       {selectedPayment === 4 ? (
@@ -527,6 +529,38 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
                 <button
                   type="button"
                   onClick={() => setInvoiceNumber("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Sales Amount - shown here for credit payments */}
+          <div className="mb-6">
+            <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase mb-2">
+              Sales
+            </label>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-mono">
+                PHP
+              </span>
+              <input
+                ref={salesAmountRef}
+                id="sales-amount"
+                type="text"
+                inputMode="decimal"
+                value={salesAmount}
+                onChange={(e) => handleCurrencyChange(e.target.value, setSalesAmount)}
+                onKeyDown={(e) => handleKeyDown(e)}
+                placeholder="0.00"
+                className="w-full pl-14 pr-10 py-3 border border-gray-200 font-mono text-right text-lg focus:outline-none focus:border-black transition-colors"
+              />
+              {salesAmount && (
+                <button
+                  type="button"
+                  onClick={() => setSalesAmount("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-black transition-colors"
                 >
                   <X className="w-4 h-4" />
