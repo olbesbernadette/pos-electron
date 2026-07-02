@@ -92,6 +92,7 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
   const [customerId, setCustomerId] = useState<number | null>(null)
   const [customerName, setCustomerName] = useState<string>("")
   const [invoiceNumber, setInvoiceNumber] = useState<string>("")
+  const [invoiceDate, setInvoiceDate] = useState<string>(format(new Date(), "yyyy-MM-dd"))
   const [isCreditPayment, setIsCreditPayment] = useState<boolean>(false)
 
   // Branch-specific fields (Pawa Gas, Matnog Gas, Gotis Hotel)
@@ -101,6 +102,7 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
   // Date picker open states
   const [shiftDateOpen, setShiftDateOpen] = useState(false)
   const [checkDateOpen, setCheckDateOpen] = useState(false)
+  const [invoiceDateOpen, setInvoiceDateOpen] = useState(false)
 
   // Check if branch needs shift date/number fields (Pawa Gas=2, Matnog Gas=3, Gotis Hotel=4)
   const needsShiftFields = [2, 3, 4].includes(branchId)
@@ -123,6 +125,7 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
     setCustomerId(null)
     setCustomerName("")
     setInvoiceNumber("")
+    setInvoiceDate(format(new Date(), "yyyy-MM-dd"))
     setIsCreditPayment(false)
     setShiftDate("")
     setShiftNumber("")
@@ -154,6 +157,7 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
         shift_id: currentShiftId,
         customer_id: customerId,
         invoice_no: invoiceNumber,
+        invoice_date: invoiceDate,
         sales_amount: sales,
         idempotency_key: currentIdempotencyKey,
       })
@@ -535,6 +539,37 @@ export function PaymentForm({ branchName, branchId }: PaymentFormProps) {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Invoice Date */}
+          <div className="mb-6">
+            <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase mb-2">
+              Invoice Date
+            </label>
+            <Popover open={invoiceDateOpen} onOpenChange={setInvoiceDateOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="w-full px-4 py-3 border border-gray-200 font-mono text-left flex items-center justify-between focus:outline-none focus:border-black transition-colors"
+                >
+                  <span className={invoiceDate ? "text-black" : "text-gray-400"}>
+                    {invoiceDate ? format(parse(invoiceDate, "yyyy-MM-dd", new Date()), "PPP") : "Date"}
+                  </span>
+                  <CaretDown className="w-4 h-4 text-gray-400" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={invoiceDate ? parse(invoiceDate, "yyyy-MM-dd", new Date()) : undefined}
+                  onSelect={(date) => {
+                    setInvoiceDate(date ? format(date, "yyyy-MM-dd") : "")
+                    setInvoiceDateOpen(false)
+                  }}
+                  defaultMonth={invoiceDate ? parse(invoiceDate, "yyyy-MM-dd", new Date()) : undefined}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Sales Amount - shown here for credit payments */}

@@ -52,7 +52,7 @@ interface InvoiceRow {
   customer_id: number
   customer_name: string
   shift_id: number
-  shift_date: string | null
+  invoice_date: string | null
   invoice_no: string
   sales_amount: number
   status: number
@@ -61,7 +61,7 @@ interface InvoiceRow {
 export function CustomerInvoiceList() {
   const [data, setData] = useState<InvoiceRow[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [sorting, setSorting] = useState<SortingState>([{ id: "shift_date", desc: true }])
+  const [sorting, setSorting] = useState<SortingState>([{ id: "invoice_date", desc: true }])
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [rowSelection, setRowSelection] = useState({})
@@ -84,7 +84,7 @@ export function CustomerInvoiceList() {
       const supabase = createClient()
       const { data: rows, error } = await supabase
         .from("credit_details")
-        .select("id, customer_id, invoice_no, sales_amount, status, shift_id, customers(customer_name), shifts(start_time)")
+        .select("id, customer_id, invoice_no, invoice_date, sales_amount, status, shift_id, customers(customer_name)")
         .order("shift_id", { ascending: false })
 
       if (error) {
@@ -97,7 +97,7 @@ export function CustomerInvoiceList() {
             customer_id: row.customer_id,
             customer_name: row.customers?.customer_name ?? "Unknown",
             shift_id: row.shift_id,
-            shift_date: row.shifts?.start_time ?? null,
+            invoice_date: row.invoice_date,
             invoice_no: row.invoice_no,
             sales_amount: row.sales_amount,
             status: row.status,
@@ -246,7 +246,7 @@ export function CustomerInvoiceList() {
         </button>
       ),
       cell: ({ row }) => {
-        const date = row.original.shift_date
+        const date = row.original.invoice_date
         return (
           <div className="flex flex-col border border-gray-200 rounded-md">
             <div className="px-3 py-2 font-sans text-sm font-medium">
