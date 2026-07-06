@@ -3,20 +3,23 @@
 import { ArrowLeft } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-
-const branchData: Record<string, { name: string }> = {
-  "hardware": { name: "Hardware" },
-  "pawa-gas": { name: "Pawa Gas" },
-  "matnog-gas": { name: "Matnog Gas" },
-  "gotis-hotel": { name: "Gotis Hotel" },
-  "rental": { name: "Rental" },
-  "boarders": { name: "Boarders" },
-}
+import { AttendanceForm } from "@/components/attendance/attendance-form"
+import { PayrollForm } from "@/components/attendance/payroll-form"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { useBranch } from "@/hooks/use-branch"
 
 export default function BranchAttendancePage() {
   const params = useParams()
   const branch = params.branch as string
-  const data = branchData[branch]
+  const { branch: data, isLoading } = useBranch(branch)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400 text-sm tracking-wider">Loading...</p>
+      </div>
+    )
+  }
 
   if (!data) {
     return (
@@ -38,11 +41,19 @@ export default function BranchAttendancePage() {
           <span className="tracking-widest uppercase">Back to Attendance</span>
         </Link>
       </div>
-      <div className="border border-gray-200 p-12 text-center">
-        <p className="text-gray-400 text-sm tracking-wider">
-          {data.name} attendance content coming soon
-        </p>
-      </div>
+
+      <Tabs defaultValue="attendance">
+        <TabsList className="mb-6">
+          <TabsTrigger value="attendance">Attendance</TabsTrigger>
+          <TabsTrigger value="payroll">Payroll</TabsTrigger>
+        </TabsList>
+        <TabsContent value="attendance">
+          <AttendanceForm branchId={data.id} />
+        </TabsContent>
+        <TabsContent value="payroll">
+          <PayrollForm branchId={data.id} />
+        </TabsContent>
+      </Tabs>
     </>
   )
 }

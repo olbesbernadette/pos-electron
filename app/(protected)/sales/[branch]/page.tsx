@@ -4,20 +4,20 @@ import { ArrowLeft } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { PaymentForm } from "@/components/sales/payment-form"
-
-const branchData: Record<string, { id: number; name: string }> = {
-  "hardware": { id: 1, name: "Hardware" },
-  "pawa-gas": { id: 2, name: "Pawa Gas" },
-  "matnog-gas": { id: 3, name: "Matnog Gas" },
-  "gotis-hotel": { id: 4, name: "Gotis Hotel" },
-  "rental": { id: 5, name: "Rental" },
-  "boarders": { id: 6, name: "Boarders" },
-}
+import { useBranch } from "@/hooks/use-branch"
 
 export default function BranchSalesPage() {
   const params = useParams()
   const branch = params.branch as string
-  const data = branchData[branch]
+  const { branch: data, isLoading } = useBranch(branch)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400 text-sm tracking-wider">Loading...</p>
+      </div>
+    )
+  }
 
   if (!data) {
     return (

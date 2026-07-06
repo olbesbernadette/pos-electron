@@ -40,10 +40,17 @@ const formatCurrency = (amount: number): string => {
   }).format(amount)
 }
 
+interface BranchOption {
+  id: number
+  name: string
+}
+
 interface EmployeeRow {
   id: string
   employee_name: string
   employee_type: string | null
+  branch_id: number | null
+  branch_name: string | null
   r_pay: number
   h_pay: number
   s_pay: number
@@ -57,6 +64,7 @@ interface EmployeeRow {
 interface EmployeeFormState {
   employee_name: string
   employee_type: string
+  branch_id: string
   r_pay: string
   incentives: string
   bonus: string
@@ -68,6 +76,7 @@ interface EmployeeFormState {
 const emptyForm: EmployeeFormState = {
   employee_name: "",
   employee_type: "",
+  branch_id: "",
   r_pay: "",
   incentives: "",
   bonus: "",
@@ -78,6 +87,7 @@ const emptyForm: EmployeeFormState = {
 
 export function EmployeesTable() {
   const [data, setData] = useState<EmployeeRow[]>([])
+  const [branches, setBranches] = useState<BranchOption[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([{ id: "employee_name", desc: false }])
   const [search, setSearch] = useState("")
@@ -98,20 +108,41 @@ export function EmployeesTable() {
     const supabase = createClient()
     const { data: rows, error } = await supabase
       .from("employees")
-      .select("id, employee_name, employee_type, r_pay, h_pay, s_pay, incentives, bonus, sss, phic, pgbg")
+      .select("id, employee_name, employee_type, branch_id, r_pay, h_pay, s_pay, incentives, bonus, sss, phic, pgbg, branches(name)")
       .order("employee_name", { ascending: true })
 
     if (error) {
       toast.error(error.message || "Failed to load employees")
       console.error(error)
     } else if (rows) {
-      setData(rows)
+      setData(
+        rows.map((row: any) => ({
+          ...row,
+          branch_name: row.branches?.name ?? null,
+        }))
+      )
     }
     setIsLoading(false)
   }
 
+  const fetchBranches = async () => {
+    const supabase = createClient()
+    const { data: rows, error } = await supabase
+      .from("branches")
+      .select("id, name")
+      .order("name", { ascending: true })
+
+    if (error) {
+      toast.error(error.message || "Failed to load branches")
+      console.error(error)
+    } else if (rows) {
+      setBranches(rows)
+    }
+  }
+
   useEffect(() => {
     fetchEmployees()
+    fetchBranches()
   }, [])
 
   const filteredData = useMemo(() => {
@@ -131,6 +162,7 @@ export function EmployeesTable() {
     setForm({
       employee_name: employee.employee_name,
       employee_type: employee.employee_type ?? "",
+      branch_id: employee.branch_id?.toString() ?? "",
       r_pay: employee.r_pay.toString(),
       incentives: employee.incentives.toString(),
       bonus: employee.bonus.toString(),
@@ -149,6 +181,7 @@ export function EmployeesTable() {
     const payload = {
       employee_name: form.employee_name.trim(),
       employee_type: form.employee_type || null,
+      branch_id: form.branch_id ? parseInt(form.branch_id) : null,
       r_pay: parseFloat(form.r_pay) || 0,
       incentives: parseFloat(form.incentives) || 0,
       bonus: parseFloat(form.bonus) || 0,
@@ -257,6 +290,32 @@ export function EmployeesTable() {
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-100/50 text-gray-700 border-gray-300">
             {type}
           </span>
+        ) : (
+          <span className="text-gray-400 text-sm">—</span>
+        )
+      },
+    },
+    {
+      accessorKey: "branch_id",
+      header: ({ column }) => (
+        <button
+          className="flex items-center gap-1 hover:text-black transition-colors"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Branch
+          {column.getIsSorted() === "asc" ? (
+            <ArrowUp className="w-3 h-3" />
+          ) : column.getIsSorted() === "desc" ? (
+            <ArrowDown className="w-3 h-3" />
+          ) : (
+            <CaretUpDown className="w-3 h-3 text-gray-400" />
+          )}
+        </button>
+      ),
+      cell: ({ row }) => {
+        const name = row.original.branch_name
+        return name ? (
+          <span className="font-sans text-sm">{name}</span>
         ) : (
           <span className="text-gray-400 text-sm">—</span>
         )
@@ -439,6 +498,23 @@ export function EmployeesTable() {
                 <SelectContent>
                   <SelectItem value="Boy">Boy</SelectItem>
                   <SelectItem value="Girl">Girl</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-sans text-gray-500 uppercase tracking-wider">Branch</label>
+              <Select
+                value={form.branch_id}
+                onValueChange={(val) => setForm(f => ({ ...f, branch_id: val }))}
+              >
+                <SelectTrigger className="w-full h-9 text-sm font-sans">
+                  <SelectValue placeholder="Select branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map(b => (
+                    <SelectItem key={b.id} value={b.id.toString()}>{b.name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

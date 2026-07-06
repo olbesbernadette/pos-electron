@@ -4,20 +4,20 @@ import { ArrowLeft } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { CustomerInvoiceList } from "@/components/admin/customer-invoice-list"
-
-const branchData: Record<string, { name: string }> = {
-  "hardware": { name: "Hardware" },
-  "pawa-gas": { name: "Pawa Gas" },
-  "matnog-gas": { name: "Matnog Gas" },
-  "gotis-hotel": { name: "Gotis Hotel" },
-  "rental": { name: "Rental" },
-  "boarders": { name: "Boarders" },
-}
+import { useBranch } from "@/hooks/use-branch"
 
 export default function BranchCreditPage() {
   const params = useParams()
   const branch = params.branch as string
-  const data = branchData[branch]
+  const { branch: data, isLoading } = useBranch(branch)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-400 text-sm tracking-wider">Loading...</p>
+      </div>
+    )
+  }
 
   if (!data) {
     return (
