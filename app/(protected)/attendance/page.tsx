@@ -12,11 +12,11 @@ const branches = [
   { name: "Boarders", slug: "boarders", icon: Users },
 ]
 
-export default function ChecksPage() {
+export default function AttendancePage() {
   return (
     <>
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-medium tracking-wide">Checks</h1>
+        <h1 className="text-2xl font-medium tracking-wide">Attendance</h1>
         <Link
           href="/"
           className="hidden md:inline-flex items-center gap-2 text-xs text-gray-500 hover:text-black transition-colors"
@@ -31,7 +31,7 @@ export default function ChecksPage() {
           return (
             <Link
               key={branch.slug}
-              href={`/checks/${branch.slug}`}
+              href={`/attendance/${branch.slug}`}
               className="group border border-gray-200 p-6 hover:border-black hover:bg-gray-50 transition-all"
             >
               <div className="flex items-center justify-between">
@@ -42,7 +42,7 @@ export default function ChecksPage() {
                   <div>
                     <h3 className="font-medium tracking-wide">{branch.name}</h3>
                     <p className="text-xs text-gray-400 font-mono tracking-wider mt-1">
-                      View checks
+                      View attendance
                     </p>
                   </div>
                 </div>

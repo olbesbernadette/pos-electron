@@ -11,7 +11,7 @@ const topNavItems = [
   { name: "SALES", href: "/sales", adminOnly: false },
   { name: "EXPENSES", href: "/expenses", adminOnly: false },
   { name: "BODEGA", href: "/bodega", adminOnly: false },
-  { name: "CHECKS", href: "/checks", adminOnly: false },
+  { name: "ATTENDANCE", href: "/attendance", adminOnly: false },
   { name: "CREDIT", href: "/credit", adminOnly: false },
   { name: "ADMIN", href: "/admin", adminOnly: true },
 ]
@@ -54,6 +54,7 @@ const adminItems: SidebarItem[] = [
   { name: "Checks", slug: "checks" },
   { name: "Stocks", slug: "stocks" },
   { name: "Customers", slug: "customers" },
+  { name: "Employees", slug: "employees" },
   { name: "Rentals", slug: "rentals" },
   { name: "Boarders", slug: "boarders" },
   { 
@@ -70,7 +71,7 @@ const sectionLabels: Record<string, string> = {
   "/sales": "Sales",
   "/expenses": "Expenses",
   "/bodega": "Bodega",
-  "/checks": "Checks",
+  "/attendance": "Attendance",
   "/credit": "Credit",
   "/admin": "Admin",
 }

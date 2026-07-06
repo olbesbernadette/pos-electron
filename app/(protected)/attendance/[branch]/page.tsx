@@ -13,7 +13,7 @@ const branchData: Record<string, { name: string }> = {
   "boarders": { name: "Boarders" },
 }
 
-export default function BranchChecksPage() {
+export default function BranchAttendancePage() {
   const params = useParams()
   const branch = params.branch as string
   const data = branchData[branch]
@@ -31,16 +31,16 @@ export default function BranchChecksPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-medium tracking-wide">{data.name}</h1>
         <Link
-          href="/checks"
+          href="/attendance"
           className="hidden md:inline-flex items-center gap-2 text-xs text-gray-500 hover:text-black transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="tracking-widest uppercase">Back to Checks</span>
+          <span className="tracking-widest uppercase">Back to Attendance</span>
         </Link>
       </div>
       <div className="border border-gray-200 p-12 text-center">
         <p className="text-gray-400 text-sm tracking-wider">
-          {data.name} checks content coming soon
+          {data.name} attendance content coming soon
         </p>
       </div>
     </>

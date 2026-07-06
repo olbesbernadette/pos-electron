@@ -12,7 +12,7 @@ const navItems = [
   { name: "SALES", href: "/sales", adminOnly: false },
   { name: "EXPENSES", href: "/expenses", adminOnly: false },
   { name: "BODEGA", href: "/bodega", adminOnly: false },
-  { name: "CHECKS", href: "/checks", adminOnly: false },
+  { name: "ATTENDANCE", href: "/attendance", adminOnly: false },
   { name: "CREDIT", href: "/credit", adminOnly: false },
   { name: "ADMIN", href: "/admin", adminOnly: true },
 ]

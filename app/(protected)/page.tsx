@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { TrendUp, Receipt, Bank, Checks, CreditCard, Gear, Play, Stop, Warehouse } from "@phosphor-icons/react"
+import { TrendUp, Receipt, Bank, Clock, CreditCard, Gear, Play, Stop, Warehouse } from "@phosphor-icons/react"
 import { useAuth } from "@/contexts/auth-context"
 import { useShift } from "@/contexts/shift-context"
 import { CloseShiftDialog } from "@/components/close-shift-dialog"
@@ -40,10 +40,10 @@ const menuItems: MenuItem[] = [
   },
   {
     id: "4",
-    name: "Checks",
-    description: "Add check records",
-    icon: "checks",
-    href: "/checks",
+    name: "Attendance",
+    description: "Track attendance records",
+    icon: "attendance",
+    href: "/attendance",
   },
   {
     id: "5",
@@ -169,7 +169,7 @@ export default function Dashboard() {
               sales: TrendUp,
               expenses: Receipt,
               bodega: Warehouse,
-              checks: Checks,
+              attendance: Clock,
               credit: CreditCard,
               admin: Gear,
             }[item.icon]

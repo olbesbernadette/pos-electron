@@ -3,6 +3,7 @@
 import { ArrowLeft } from "@phosphor-icons/react/dist/ssr"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { CustomerInvoiceList } from "@/components/admin/customer-invoice-list"
 
 const branchData: Record<string, { name: string }> = {
   "hardware": { name: "Hardware" },
@@ -38,11 +39,15 @@ export default function BranchCreditPage() {
           <span className="tracking-widest uppercase">Back to Credit</span>
         </Link>
       </div>
-      <div className="border border-gray-200 p-12 text-center">
-        <p className="text-gray-400 text-sm tracking-wider">
-          {data.name} credit content coming soon
-        </p>
-      </div>
+      {branch === "hardware" ? (
+        <CustomerInvoiceList />
+      ) : (
+        <div className="border border-gray-200 p-12 text-center">
+          <p className="text-gray-400 text-sm tracking-wider">
+            {data.name} credit content coming soon
+          </p>
+        </div>
+      )}
     </>
   )
 }
