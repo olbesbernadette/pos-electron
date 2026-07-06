@@ -130,6 +130,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
         .from("employees")
         .select("id, employee_name, r_pay, s_pay, h_pay, incentives, sss, phic, pgbg")
         .eq("branch_id", branchId)
+        .eq("status", 1)
         .order("employee_name", { ascending: true })
 
       if (error) {

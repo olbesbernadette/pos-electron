@@ -13,23 +13,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ArrowUp, ArrowDown, CaretUpDown, MagnifyingGlass, PencilSimple, Trash, Plus } from "@phosphor-icons/react"
+import { ArrowUp, ArrowDown, CaretUpDown, MagnifyingGlass, PencilSimple, Plus } from "@phosphor-icons/react"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 
@@ -43,6 +33,11 @@ const formatCurrency = (amount: number): string => {
 interface BranchOption {
   id: number
   name: string
+}
+
+const statusConfig: Record<number, { label: string; bg: string; text: string; border: string }> = {
+  1: { label: "Active", bg: "bg-green-100/50", text: "text-green-700", border: "border-green-300" },
+  2: { label: "Inactive", bg: "bg-gray-100/50", text: "text-gray-500", border: "border-gray-300" },
 }
 
 interface EmployeeRow {
@@ -59,6 +54,7 @@ interface EmployeeRow {
   sss: number
   phic: number
   pgbg: number
+  status: number
 }
 
 interface EmployeeFormState {
@@ -98,17 +94,12 @@ export function EmployeesTable() {
   const [form, setForm] = useState<EmployeeFormState>(emptyForm)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Delete dialog
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [employeeToDelete, setEmployeeToDelete] = useState<EmployeeRow | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-
   const fetchEmployees = async () => {
     setIsLoading(true)
     const supabase = createClient()
     const { data: rows, error } = await supabase
       .from("employees")
-      .select("id, employee_name, employee_type, branch_id, r_pay, h_pay, s_pay, incentives, bonus, sss, phic, pgbg, branches(name)")
+      .select("id, employee_name, employee_type, branch_id, r_pay, h_pay, s_pay, incentives, bonus, sss, phic, pgbg, status, branches(name)")
       .order("employee_name", { ascending: true })
 
     if (error) {
@@ -219,30 +210,20 @@ export function EmployeesTable() {
     fetchEmployees()
   }
 
-  const openDelete = (employee: EmployeeRow) => {
-    setEmployeeToDelete(employee)
-    setDeleteDialogOpen(true)
-  }
-
-  const confirmDelete = async () => {
-    if (!employeeToDelete) return
-    setIsDeleting(true)
+  const handleStatusChange = async (id: string, newStatus: number) => {
     const supabase = createClient()
     const { error } = await supabase
       .from("employees")
-      .delete()
-      .eq("id", employeeToDelete.id)
+      .update({ status: newStatus })
+      .eq("id", id)
 
-    setIsDeleting(false)
     if (error) {
-      toast.error(error.message || "Failed to delete employee")
+      toast.error("Failed to update status")
       console.error(error)
       return
     }
-    setData(prev => prev.filter(r => r.id !== employeeToDelete.id))
-    toast.success(`${employeeToDelete.employee_name} deleted`)
-    setDeleteDialogOpen(false)
-    setEmployeeToDelete(null)
+    setData(prev => prev.map(r => (r.id === id ? { ...r, status: newStatus } : r)))
+    toast.success(`Status updated to ${statusConfig[newStatus].label}`)
   }
 
   const columns: ColumnDef<EmployeeRow>[] = [
@@ -266,6 +247,42 @@ export function EmployeesTable() {
       cell: ({ row }) => (
         <span className="font-sans text-sm font-medium">{row.getValue("employee_name")}</span>
       ),
+    },
+    {
+      accessorKey: "status",
+      header: ({ column }) => (
+        <button
+          className="flex items-center gap-1 hover:text-black transition-colors"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        >
+          Status
+          {column.getIsSorted() === "asc" ? (
+            <ArrowUp className="w-3 h-3" />
+          ) : column.getIsSorted() === "desc" ? (
+            <ArrowDown className="w-3 h-3" />
+          ) : (
+            <CaretUpDown className="w-3 h-3 text-gray-400" />
+          )}
+        </button>
+      ),
+      cell: ({ row }) => {
+        const status = row.getValue("status") as number
+        const cfg = statusConfig[status] ?? statusConfig[1]
+        return (
+          <Select
+            value={status.toString()}
+            onValueChange={(val) => handleStatusChange(row.original.id, parseInt(val))}
+          >
+            <SelectTrigger className={`h-auto px-2.5 py-1 rounded-full text-xs font-sans font-medium border w-auto gap-1.5 shadow-none focus:ring-0 ${cfg.bg} ${cfg.text} ${cfg.border}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">Active</SelectItem>
+              <SelectItem value="2">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        )
+      },
     },
     {
       accessorKey: "employee_type",
@@ -365,26 +382,15 @@ export function EmployeesTable() {
       id: "actions",
       header: "Actions",
       cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs flex items-center gap-1.5 px-3"
-            onClick={() => openEdit(row.original)}
-          >
-            <PencilSimple className="w-3.5 h-3.5" />
-            Edit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs flex items-center gap-1.5 px-3 text-red-600 hover:text-red-700 hover:border-red-300"
-            onClick={() => openDelete(row.original)}
-          >
-            <Trash className="w-3.5 h-3.5" />
-            Delete
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs flex items-center gap-1.5 px-3"
+          onClick={() => openEdit(row.original)}
+        >
+          <PencilSimple className="w-3.5 h-3.5" />
+          Edit
+        </Button>
       ),
     },
   ]
@@ -601,34 +607,6 @@ export function EmployeesTable() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Employee</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this employee record? This action cannot be undone.
-              {employeeToDelete && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-md font-sans text-sm">
-                  <div>Employee: {employeeToDelete.employee_name}</div>
-                  <div>R Pay: {formatCurrency(employeeToDelete.r_pay)}</div>
-                </div>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

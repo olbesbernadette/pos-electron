@@ -53,11 +53,47 @@ interface AttendanceFormProps {
 
 type SortField = "employee_type" | "employee_name"
 
+interface AttendanceDraft {
+  date: string
+  dayType: string
+  entries: Record<string, AttendanceEntry>
+}
+
+// Unsaved input is kept in localStorage per branch so it survives navigating
+// away and back; it's only cleared once Save Attendance succeeds.
+const draftKey = (branchId: number) => `attendance-draft-${branchId}`
+
+const loadDraft = (branchId: number): AttendanceDraft | null => {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(draftKey(branchId))
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+const saveDraft = (branchId: number, draft: AttendanceDraft) => {
+  if (typeof window === "undefined") return
+  localStorage.setItem(draftKey(branchId), JSON.stringify(draft))
+}
+
+const clearDraft = (branchId: number) => {
+  if (typeof window === "undefined") return
+  localStorage.removeItem(draftKey(branchId))
+}
+
 export function AttendanceForm({ branchId }: AttendanceFormProps) {
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
-  const [entries, setEntries] = useState<Record<string, AttendanceEntry>>({})
-  const [date, setDate] = useState<string>(format(new Date(), "yyyy-MM-dd"))
-  const [dayType, setDayType] = useState<string>(() => defaultDayType(format(new Date(), "yyyy-MM-dd")))
+  const [entries, setEntries] = useState<Record<string, AttendanceEntry>>(
+    () => loadDraft(branchId)?.entries ?? {}
+  )
+  const [date, setDate] = useState<string>(
+    () => loadDraft(branchId)?.date ?? format(new Date(), "yyyy-MM-dd")
+  )
+  const [dayType, setDayType] = useState<string>(
+    () => loadDraft(branchId)?.dayType ?? defaultDayType(format(new Date(), "yyyy-MM-dd"))
+  )
   const [dateOpen, setDateOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -123,19 +159,29 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
         .from("employees")
         .select("id, employee_name, employee_type")
         .eq("branch_id", branchId)
+        .eq("status", 1)
 
       if (error) {
         toast.error("Failed to load employees")
         console.error(error)
       } else if (rows) {
         setEmployees(rows)
-        await loadAttendance(rows.map(r => r.id), date)
+        // A saved draft already seeded date/dayType/entries on mount — don't
+        // overwrite unsaved input with a fresh DB fetch in that case.
+        if (!loadDraft(branchId)) {
+          await loadAttendance(rows.map(r => r.id), date)
+        }
       }
       setIsLoading(false)
     }
     fetchEmployees()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId])
+
+  // Persist unsaved input for this branch so it survives navigating away and back
+  useEffect(() => {
+    saveDraft(branchId, { date, dayType, entries })
+  }, [branchId, date, dayType, entries])
 
   const handleDateSelect = async (newDate: Date | undefined) => {
     if (!newDate) return
@@ -146,10 +192,16 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
   }
 
   const updateEntry = (employeeId: string, field: keyof AttendanceEntry, value: string) => {
-    setEntries(prev => ({
-      ...prev,
-      [employeeId]: { ...(prev[employeeId] ?? emptyEntry), [field]: value },
-    }))
+    setEntries(prev => {
+      const current = prev[employeeId] ?? emptyEntry
+      const updated = { ...current, [field]: value }
+      // Marking time in as Absent means the whole day is absent — clear time out and break too
+      if (field === "time_in" && value === "00:00") {
+        updated.time_out = "00:00"
+        updated.break_hours = "0"
+      }
+      return { ...prev, [employeeId]: updated }
+    })
   }
 
   const handleSave = async () => {
@@ -187,6 +239,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
       return
     }
     toast.success("Attendance saved")
+    clearDraft(branchId)
+    setEntries({})
   }
 
   const dayLabel = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE")
