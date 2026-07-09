@@ -97,6 +97,9 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
   const [dateOpen, setDateOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  // Once a date has saved attendance, fields lock as read-only until Edit is pressed
+  const [hasSavedData, setHasSavedData] = useState(false)
+  const [isEditing, setIsEditing] = useState(true)
   const [sortField, setSortField] = useState<SortField>("employee_type")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
@@ -123,6 +126,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
     if (employeeIds.length === 0) {
       setEntries({})
       setDayType(defaultDayType(attendanceDate))
+      setHasSavedData(false)
+      setIsEditing(true)
       return
     }
 
@@ -149,6 +154,10 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
     })
     setEntries(nextEntries)
     setDayType(rows && rows.length > 0 ? rows[0].day_type : defaultDayType(attendanceDate))
+    // Existing saved attendance opens read-only; a blank day is editable right away
+    const savedExists = !!rows && rows.length > 0
+    setHasSavedData(savedExists)
+    setIsEditing(!savedExists)
   }, [])
 
   useEffect(() => {
@@ -240,7 +249,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
     }
     toast.success("Attendance saved")
     clearDraft(branchId)
-    setEntries({})
+    // Reload from the DB so the form reflects what was actually saved, then lock it
+    await loadAttendance(employees.map(e => e.id), date)
   }
 
   const dayLabel = format(parse(date, "yyyy-MM-dd", new Date()), "EEEE")
@@ -287,8 +297,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
             <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase mb-2">
               Day Type
             </label>
-            <Select value={dayType} onValueChange={setDayType}>
-              <SelectTrigger className={cn(fieldClass, "rounded-none shadow-none text-base focus-visible:ring-0 data-[size=default]:h-auto")}>
+            <Select value={dayType} onValueChange={setDayType} disabled={!isEditing}>
+              <SelectTrigger className={cn(fieldClass, "rounded-none shadow-none text-base focus-visible:ring-0 data-[size=default]:h-auto", !isEditing && "opacity-60 cursor-not-allowed bg-gray-50")}>
                 <SelectValue className="text-black" />
               </SelectTrigger>
               <SelectContent>
@@ -299,6 +309,21 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
             </Select>
           </div>
         </div>
+
+        {hasSavedData && !isEditing && (
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-200 pt-4">
+            <span className="text-xs font-sans text-gray-500">
+              Attendance for this date is already saved. Click Edit to make changes.
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="shrink-0 px-4 py-2 font-mono tracking-wider uppercase text-xs border border-black hover:bg-black hover:text-white transition-colors"
+            >
+              Edit
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Employees — mobile card list */}
@@ -347,6 +372,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                       value={entry.time_in}
                       onChange={(v) => updateEntry(emp.id, "time_in", v)}
                       className="w-full"
+                      disabled={!isEditing}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -355,6 +381,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                       value={entry.time_out}
                       onChange={(v) => updateEntry(emp.id, "time_out", v)}
                       className="w-full"
+                      disabled={!isEditing}
                     />
                   </div>
                 </div>
@@ -369,7 +396,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                     onChange={(e) => updateEntry(emp.id, "break_hours", e.target.value)}
                     onFocus={(e) => e.target.select()}
                     onWheel={(e) => e.currentTarget.blur()}
-                    className="w-full px-3 py-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    disabled={!isEditing}
+                    className="w-full px-3 py-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </div>
@@ -444,12 +472,14 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                       <TimePicker
                         value={entry.time_in}
                         onChange={(v) => updateEntry(emp.id, "time_in", v)}
+                        disabled={!isEditing}
                       />
                     </TableCell>
                     <TableCell className="text-sm py-3">
                       <TimePicker
                         value={entry.time_out}
                         onChange={(v) => updateEntry(emp.id, "time_out", v)}
+                        disabled={!isEditing}
                       />
                     </TableCell>
                     <TableCell className="text-sm py-3">
@@ -462,7 +492,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                         onChange={(e) => updateEntry(emp.id, "break_hours", e.target.value)}
                         onFocus={(e) => e.target.select()}
                         onWheel={(e) => e.currentTarget.blur()}
-                        className="w-24 px-3 py-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        disabled={!isEditing}
+                        className="w-24 px-3 py-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors text-right disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </TableCell>
                   </TableRow>
@@ -479,18 +510,20 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
         </Table>
       </div>
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={isSaving || employees.length === 0}
-        className={`w-full py-3 font-mono tracking-wider uppercase text-sm transition-colors ${
-          isSaving || employees.length === 0
-            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-            : "bg-black text-white hover:bg-gray-800"
-        }`}
-      >
-        {isSaving ? "Saving..." : "Save Attendance"}
-      </button>
+      {isEditing && (
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving || employees.length === 0}
+          className={`w-full py-3 font-mono tracking-wider uppercase text-sm transition-colors ${
+            isSaving || employees.length === 0
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-black text-white hover:bg-gray-800"
+          }`}
+        >
+          {isSaving ? "Saving..." : "Save Attendance"}
+        </button>
+      )}
     </div>
   )
 }

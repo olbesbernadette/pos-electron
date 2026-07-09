@@ -14,9 +14,10 @@ interface TimePickerProps {
   value: string // 24-hour "HH:MM", empty string if unset
   onChange: (value: string) => void
   className?: string
+  disabled?: boolean
 }
 
-export function TimePicker({ value, onChange, className }: TimePickerProps) {
+export function TimePicker({ value, onChange, className, disabled }: TimePickerProps) {
   const [open, setOpen] = useState(false)
   const [hour24, minute] = value ? value.split(":").map(Number) : [null, null]
   const hour12 = hour24 === null ? "" : ((hour24 % 12) || 12).toString()
@@ -42,8 +43,10 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           className={cn(
             "w-[110px] px-3 py-2 text-sm font-mono border border-gray-200 rounded-md flex items-center justify-between gap-1.5 focus:outline-none focus:border-black transition-colors",
+            disabled && "opacity-60 cursor-not-allowed bg-gray-50",
             className,
           )}
         >
