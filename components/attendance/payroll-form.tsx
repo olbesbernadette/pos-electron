@@ -433,7 +433,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
               type="button"
               onClick={handlePullAttendance}
               disabled={isLoadingAttendance}
-              className={`w-full py-3 font-mono tracking-wider uppercase text-sm transition-colors ${
+              className={`w-full py-3 font-mono tracking-wider uppercase text-base transition-colors ${
                 isLoadingAttendance
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-black text-white hover:bg-gray-800"
