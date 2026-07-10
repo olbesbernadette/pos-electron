@@ -33,6 +33,7 @@ interface PayrollRow {
   attendance_date: string
   day: string
   day_type: string
+  shift_start: string | null
   time_in: string | null
   time_out: string | null
   break_hours: string
@@ -61,16 +62,18 @@ const timeToMinutes = (time: string): number => {
   return h * 60 + m
 }
 
-const SHIFT_START_MINUTES = 7 * 60 + 30 // 7:30am — clocking in earlier doesn't earn extra basic hours
+const DEFAULT_SHIFT_START_MINUTES = 7 * 60 + 30 // 7:30am fallback for rows saved before shift_start existed
 
 // "00:00" is the Absent sentinel set by the time picker — not an actual midnight clock-in/out
 const isAbsent = (timeIn: string | null, timeOut: string | null): boolean =>
   !timeIn || !timeOut || timeIn === "00:00" || timeOut === "00:00"
 
-// Hours actually worked (time out - time in - break), capped at 8 — anything beyond 8 is overtime, not basic
-const computeBasicHours = (timeIn: string | null, timeOut: string | null, breakHours: number): number => {
+// Hours actually worked (time out - time in - break), capped at 8 — anything beyond 8 is overtime, not basic.
+// Clocking in earlier than the day's scheduled shift_start doesn't earn extra basic hours.
+const computeBasicHours = (timeIn: string | null, timeOut: string | null, breakHours: number, shiftStart: string | null): number => {
   if (isAbsent(timeIn, timeOut)) return 0
-  const inMinutes = Math.max(timeToMinutes(timeIn!), SHIFT_START_MINUTES)
+  const shiftStartMinutes = shiftStart ? timeToMinutes(shiftStart) : DEFAULT_SHIFT_START_MINUTES
+  const inMinutes = Math.max(timeToMinutes(timeIn!), shiftStartMinutes)
   let diff = timeToMinutes(timeOut!) - inMinutes
   if (diff < 0) diff += 24 * 60 // overnight shift
   const hours = Math.max(diff / 60 - breakHours, 0)
@@ -86,9 +89,9 @@ const computeRawHours = (timeIn: string | null, timeOut: string | null, breakHou
 }
 
 // Anything worked beyond basic hours
-const computeOtHours = (timeIn: string | null, timeOut: string | null, breakHours: number): number => {
+const computeOtHours = (timeIn: string | null, timeOut: string | null, breakHours: number, shiftStart: string | null): number => {
   return Math.max(
-    computeRawHours(timeIn, timeOut, breakHours) - computeBasicHours(timeIn, timeOut, breakHours),
+    computeRawHours(timeIn, timeOut, breakHours) - computeBasicHours(timeIn, timeOut, breakHours, shiftStart),
     0
   )
 }
@@ -158,7 +161,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
     const supabase = createClient()
     const { data, error } = await supabase
       .from("attendance")
-      .select("attendance_date, day, day_type, time_in, time_out, break_duration")
+      .select("attendance_date, day, day_type, shift_start, time_in, time_out, break_duration")
       .eq("employee_id", employeeId)
       .gte("attendance_date", format(dateRange.from, "yyyy-MM-dd"))
       .lte("attendance_date", format(dateRange.to, "yyyy-MM-dd"))
@@ -176,6 +179,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
         attendance_date: row.attendance_date,
         day: row.day,
         day_type: row.day_type,
+        shift_start: row.shift_start?.slice(0, 5) ?? null,
         time_in: row.time_in?.slice(0, 5) ?? null,
         time_out: row.time_out?.slice(0, 5) ?? null,
         break_hours: intervalToHours(row.break_duration),
@@ -243,8 +247,8 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
     return rows.reduce(
       (acc, r) => {
         const breakHours = parseFloat(r.break_hours) || 0
-        acc.basicPay += computeBasicHours(r.time_in, r.time_out, breakHours) * basicRateForDayType(r.day_type)
-        acc.otPay += computeOtHours(r.time_in, r.time_out, breakHours) * sPay
+        acc.basicPay += computeBasicHours(r.time_in, r.time_out, breakHours, r.shift_start) * basicRateForDayType(r.day_type)
+        acc.otPay += computeOtHours(r.time_in, r.time_out, breakHours, r.shift_start) * sPay
         acc.allowance += r.has_allowance ? parseFloat(r.allowance_amount) || 0 : 0
         return acc
       },
@@ -449,6 +453,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Date</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Day</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Type</TableHead>
+              <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Shift Start</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Time In</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Time Out</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500 whitespace-nowrap">Break (hrs)</TableHead>
@@ -462,7 +467,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
           <TableBody>
             {isLoadingAttendance ? (
               <TableRow>
-                <TableCell colSpan={11} className="h-24 text-center text-gray-400 font-sans text-sm">
+                <TableCell colSpan={12} className="h-24 text-center text-gray-400 font-sans text-sm">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -476,20 +481,21 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
                   <TableCell className="text-sm py-3 whitespace-nowrap font-sans">
                     {dayTypeLabels[row.day_type] ?? row.day_type}
                   </TableCell>
+                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{formatTime12(row.shift_start)}</TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{formatTime12(row.time_in)}</TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{formatTime12(row.time_out)}</TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{row.break_hours}</TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
-                    {computeBasicHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0).toFixed(2)}
+                    {computeBasicHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start).toFixed(2)}
                   </TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
-                    {(computeBasicHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0) * basicRateForDayType(row.day_type)).toFixed(2)}
+                    {(computeBasicHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start) * basicRateForDayType(row.day_type)).toFixed(2)}
                   </TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
-                    {computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0).toFixed(2)}
+                    {computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start).toFixed(2)}
                   </TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
-                    {(computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0) * sPay).toFixed(2)}
+                    {(computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start) * sPay).toFixed(2)}
                   </TableCell>
                   <TableCell className="py-3">
                     <div className="flex items-center gap-2">
@@ -515,7 +521,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={11} className="h-24 text-center text-gray-400 font-sans text-sm">
+                <TableCell colSpan={12} className="h-24 text-center text-gray-400 font-sans text-sm">
                   No attendance data loaded yet
                 </TableCell>
               </TableRow>

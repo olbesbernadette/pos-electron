@@ -23,13 +23,14 @@ interface EmployeeRow {
 }
 
 interface AttendanceEntry {
+  shift_start: string
   time_in: string
   time_out: string
   break_hours: string
 }
 
 // Default entry for employees with no saved attendance yet for the selected date
-const emptyEntry: AttendanceEntry = { time_in: "07:30", time_out: "17:00", break_hours: "1" }
+const emptyEntry: AttendanceEntry = { shift_start: "07:30", time_in: "07:30", time_out: "17:00", break_hours: "1" }
 
 const dayTypeLabels: Record<string, string> = { R: "R - Regular", S: "S - Special", H: "H - Holiday" }
 
@@ -83,16 +84,22 @@ const clearDraft = (branchId: number) => {
   localStorage.removeItem(draftKey(branchId))
 }
 
+// A draft is only relevant if it was left for today — the form should always
+// open on today's date, so a stale draft for another date is ignored.
+const loadTodayDraft = (branchId: number): AttendanceDraft | null => {
+  const draft = loadDraft(branchId)
+  if (!draft || draft.date !== format(new Date(), "yyyy-MM-dd")) return null
+  return draft
+}
+
 export function AttendanceForm({ branchId }: AttendanceFormProps) {
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
   const [entries, setEntries] = useState<Record<string, AttendanceEntry>>(
-    () => loadDraft(branchId)?.entries ?? {}
+    () => loadTodayDraft(branchId)?.entries ?? {}
   )
-  const [date, setDate] = useState<string>(
-    () => loadDraft(branchId)?.date ?? format(new Date(), "yyyy-MM-dd")
-  )
+  const [date, setDate] = useState<string>(() => format(new Date(), "yyyy-MM-dd"))
   const [dayType, setDayType] = useState<string>(
-    () => loadDraft(branchId)?.dayType ?? defaultDayType(format(new Date(), "yyyy-MM-dd"))
+    () => loadTodayDraft(branchId)?.dayType ?? defaultDayType(format(new Date(), "yyyy-MM-dd"))
   )
   const [dateOpen, setDateOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -100,6 +107,8 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
   // Once a date has saved attendance, fields lock as read-only until Edit is pressed
   const [hasSavedData, setHasSavedData] = useState(false)
   const [isEditing, setIsEditing] = useState(true)
+  // Snapshot of the last-loaded saved values, restored on Cancel
+  const [savedSnapshot, setSavedSnapshot] = useState<{ entries: Record<string, AttendanceEntry>; dayType: string } | null>(null)
   const [sortField, setSortField] = useState<SortField>("employee_type")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
@@ -128,13 +137,14 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
       setDayType(defaultDayType(attendanceDate))
       setHasSavedData(false)
       setIsEditing(true)
+      setSavedSnapshot(null)
       return
     }
 
     const supabase = createClient()
     const { data: rows, error } = await supabase
       .from("attendance")
-      .select("employee_id, time_in, time_out, break_duration, day_type")
+      .select("employee_id, shift_start, time_in, time_out, break_duration, day_type")
       .eq("attendance_date", attendanceDate)
       .in("employee_id", employeeIds)
 
@@ -147,17 +157,20 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
     const nextEntries: Record<string, AttendanceEntry> = {}
     rows?.forEach((row: any) => {
       nextEntries[row.employee_id] = {
+        shift_start: row.shift_start?.slice(0, 5) ?? "",
         time_in: row.time_in?.slice(0, 5) ?? "",
         time_out: row.time_out?.slice(0, 5) ?? "",
         break_hours: intervalToHours(row.break_duration),
       }
     })
+    const nextDayType = rows && rows.length > 0 ? rows[0].day_type : defaultDayType(attendanceDate)
     setEntries(nextEntries)
-    setDayType(rows && rows.length > 0 ? rows[0].day_type : defaultDayType(attendanceDate))
+    setDayType(nextDayType)
     // Existing saved attendance opens read-only; a blank day is editable right away
     const savedExists = !!rows && rows.length > 0
     setHasSavedData(savedExists)
     setIsEditing(!savedExists)
+    setSavedSnapshot(savedExists ? { entries: nextEntries, dayType: nextDayType } : null)
   }, [])
 
   useEffect(() => {
@@ -175,9 +188,9 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
         console.error(error)
       } else if (rows) {
         setEmployees(rows)
-        // A saved draft already seeded date/dayType/entries on mount — don't
-        // overwrite unsaved input with a fresh DB fetch in that case.
-        if (!loadDraft(branchId)) {
+        // A saved draft for today already seeded date/dayType/entries on mount —
+        // don't overwrite unsaved input with a fresh DB fetch in that case.
+        if (!loadTodayDraft(branchId)) {
           await loadAttendance(rows.map(r => r.id), date)
         }
       }
@@ -198,6 +211,14 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
     setDate(dateStr)
     setDateOpen(false)
     await loadAttendance(employees.map(e => e.id), dateStr)
+  }
+
+  const handleCancelEdit = () => {
+    if (savedSnapshot) {
+      setEntries(savedSnapshot.entries)
+      setDayType(savedSnapshot.dayType)
+    }
+    setIsEditing(false)
   }
 
   const updateEntry = (employeeId: string, field: keyof AttendanceEntry, value: string) => {
@@ -222,6 +243,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
           employee_id: emp.id,
           attendance_date: date,
           day_type: dayType,
+          shift_start: entry.shift_start || null,
           time_in: entry.time_in || null,
           time_out: entry.time_out || null,
           break_duration: `${parseFloat(entry.break_hours) || 0} hours`,
@@ -310,17 +332,19 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
           </div>
         </div>
 
-        {hasSavedData && !isEditing && (
+        {hasSavedData && (
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-200 pt-4">
             <span className="text-xs font-sans text-gray-500">
-              Attendance for this date is already saved. Click Edit to make changes.
+              {isEditing
+                ? "Editing saved attendance for this date. Cancel to discard changes."
+                : "Attendance for this date is already saved. Click Edit to make changes."}
             </span>
             <button
               type="button"
-              onClick={() => setIsEditing(true)}
+              onClick={isEditing ? handleCancelEdit : () => setIsEditing(true)}
               className="shrink-0 px-4 py-2 font-mono tracking-wider uppercase text-xs border border-black hover:bg-black hover:text-white transition-colors"
             >
-              Edit
+              {isEditing ? "Cancel" : "Edit"}
             </button>
           </div>
         )}
@@ -364,6 +388,15 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>
                   )}
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase">Shift Start</label>
+                  <TimePicker
+                    value={entry.shift_start}
+                    onChange={(v) => updateEntry(emp.id, "shift_start", v)}
+                    className="w-full"
+                    disabled={!isEditing}
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
@@ -441,6 +474,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                   )}
                 </button>
               </TableHead>
+              <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500">Shift Start</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500">Time In</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500">Time Out</TableHead>
               <TableHead className="text-xs font-sans tracking-wider uppercase text-gray-500">Break (hrs)</TableHead>
@@ -449,7 +483,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-gray-400 font-sans text-sm">
+                <TableCell colSpan={6} className="h-24 text-center text-gray-400 font-sans text-sm">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -468,6 +502,13 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                       )}
                     </TableCell>
                     <TableCell className="text-sm py-3 font-sans font-medium">{emp.employee_name}</TableCell>
+                    <TableCell className="text-sm py-3">
+                      <TimePicker
+                        value={entry.shift_start}
+                        onChange={(v) => updateEntry(emp.id, "shift_start", v)}
+                        disabled={!isEditing}
+                      />
+                    </TableCell>
                     <TableCell className="text-sm py-3">
                       <TimePicker
                         value={entry.time_in}
@@ -501,7 +542,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-gray-400 font-sans text-sm">
+                <TableCell colSpan={6} className="h-24 text-center text-gray-400 font-sans text-sm">
                   No employees found for this branch
                 </TableCell>
               </TableRow>
