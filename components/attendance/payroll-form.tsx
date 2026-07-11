@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { TimePicker } from "./time-picker"
 
 // Shared look for the Employee / Date Range fields, matching AttendanceForm's header fields
 const fieldClass =
@@ -106,6 +107,9 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false)
   const [isLoadingAttendance, setIsLoadingAttendance] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEditingAttendance, setIsEditingAttendance] = useState(false)
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false)
+  const [attendanceSnapshot, setAttendanceSnapshot] = useState<PayrollRow[] | null>(null)
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID())
 
@@ -191,12 +195,65 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
     setPgbgOn(false)
     setPgbgAmount("")
     setBonusAmount("")
+    setIsEditingAttendance(false)
+    setAttendanceSnapshot(null)
   }
 
   const updateRow = (attendanceDate: string, field: keyof PayrollRow, value: string | boolean) => {
     setRows(prev =>
-      prev.map(r => (r.attendance_date === attendanceDate ? { ...r, [field]: value } : r))
+      prev.map(r => {
+        if (r.attendance_date !== attendanceDate) return r
+        const updated = { ...r, [field]: value }
+        // Marking time in as Absent means the whole day is absent — clear time out and break too
+        if (field === "time_in" && value === "00:00") {
+          updated.time_out = "00:00"
+          updated.break_hours = "0"
+        }
+        return updated
+      })
     )
+  }
+
+  const handleEditAttendance = () => {
+    setAttendanceSnapshot(rows)
+    setIsEditingAttendance(true)
+  }
+
+  const handleCancelEditAttendance = () => {
+    if (attendanceSnapshot) setRows(attendanceSnapshot)
+    setAttendanceSnapshot(null)
+    setIsEditingAttendance(false)
+  }
+
+  const handleSaveAttendance = async () => {
+    if (!employeeId) return
+    setIsSavingAttendance(true)
+    const supabase = createClient()
+    const results = await Promise.all(
+      rows.map(r =>
+        supabase
+          .from("attendance")
+          .update({
+            shift_start: r.shift_start || null,
+            time_in: r.time_in || null,
+            time_out: r.time_out || null,
+            break_duration: `${parseFloat(r.break_hours) || 0} hours`,
+          })
+          .eq("employee_id", employeeId)
+          .eq("attendance_date", r.attendance_date)
+      )
+    )
+
+    setIsSavingAttendance(false)
+    const failed = results.find(r => r.error)
+    if (failed?.error) {
+      toast.error("Failed to save attendance changes")
+      console.error(failed.error)
+      return
+    }
+    toast.success("Attendance updated")
+    setAttendanceSnapshot(null)
+    setIsEditingAttendance(false)
   }
 
   const selectedEmployee = employees.find(e => e.id === employeeId)
@@ -475,10 +532,53 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
                   <TableCell className="text-sm py-3 whitespace-nowrap font-sans">
                     {dayTypeLabels[row.day_type] ?? row.day_type}
                   </TableCell>
-                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{formatTime12(row.shift_start)}</TableCell>
-                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{formatTime12(row.time_in)}</TableCell>
-                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{formatTime12(row.time_out)}</TableCell>
-                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">{row.break_hours}</TableCell>
+                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
+                    {isEditingAttendance ? (
+                      <TimePicker
+                        value={row.shift_start ?? ""}
+                        onChange={(v) => updateRow(row.attendance_date, "shift_start", v)}
+                      />
+                    ) : (
+                      formatTime12(row.shift_start)
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
+                    {isEditingAttendance ? (
+                      <TimePicker
+                        value={row.time_in ?? ""}
+                        onChange={(v) => updateRow(row.attendance_date, "time_in", v)}
+                      />
+                    ) : (
+                      formatTime12(row.time_in)
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
+                    {isEditingAttendance ? (
+                      <TimePicker
+                        value={row.time_out ?? ""}
+                        onChange={(v) => updateRow(row.attendance_date, "time_out", v)}
+                      />
+                    ) : (
+                      formatTime12(row.time_out)
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
+                    {isEditingAttendance ? (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.25"
+                        placeholder="0"
+                        value={row.break_hours}
+                        onChange={(e) => updateRow(row.attendance_date, "break_hours", e.target.value)}
+                        onFocus={(e) => e.target.select()}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        className="w-20 px-2 py-1.5 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    ) : (
+                      row.break_hours
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
                     {computeBasicHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start).toFixed(2)}
                   </TableCell>
@@ -523,6 +623,32 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
           </TableBody>
         </Table>
       </div>
+
+      {/* Edit attendance */}
+      {rows.length > 0 && (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={isEditingAttendance ? handleCancelEditAttendance : handleEditAttendance}
+            disabled={isSavingAttendance}
+            className="px-4 py-2 font-mono text-xs tracking-wider uppercase border border-gray-200 hover:border-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isEditingAttendance ? "Cancel" : "Edit"}
+          </button>
+          {isEditingAttendance && (
+            <button
+              type="button"
+              onClick={handleSaveAttendance}
+              disabled={isSavingAttendance}
+              className={`px-4 py-2 font-mono text-xs tracking-wider uppercase transition-colors ${
+                isSavingAttendance ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-black text-white hover:bg-gray-800"
+              }`}
+            >
+              {isSavingAttendance ? "Saving..." : "Save Changes"}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Summary */}
       {rows.length > 0 && (
