@@ -68,32 +68,26 @@ const DEFAULT_SHIFT_START_MINUTES = 7 * 60 + 30 // 7:30am fallback for rows save
 const isAbsent = (timeIn: string | null, timeOut: string | null): boolean =>
   !timeIn || !timeOut || timeIn === "00:00" || timeOut === "00:00"
 
-// Hours actually worked (time out - time in - break), capped at 8 — anything beyond 8 is overtime, not basic.
-// Clocking in earlier than the day's scheduled shift_start doesn't earn extra basic hours.
-const computeBasicHours = (timeIn: string | null, timeOut: string | null, breakHours: number, shiftStart: string | null): number => {
+// Hours worked counting only from the scheduled shift_start (clocking in earlier doesn't earn extra
+// basic or OT hours), uncapped — used as the basis for both computeBasicHours and computeOtHours.
+const computeEffectiveHours = (timeIn: string | null, timeOut: string | null, breakHours: number, shiftStart: string | null): number => {
   if (isAbsent(timeIn, timeOut)) return 0
   const shiftStartMinutes = shiftStart ? timeToMinutes(shiftStart) : DEFAULT_SHIFT_START_MINUTES
   const inMinutes = Math.max(timeToMinutes(timeIn!), shiftStartMinutes)
   let diff = timeToMinutes(timeOut!) - inMinutes
   if (diff < 0) diff += 24 * 60 // overnight shift
-  const hours = Math.max(diff / 60 - breakHours, 0)
-  return hours >= 8 ? 8 : hours
-}
-
-// Total hours actually worked (time out - time in - break), uncapped and using the real time in
-const computeRawHours = (timeIn: string | null, timeOut: string | null, breakHours: number): number => {
-  if (isAbsent(timeIn, timeOut)) return 0
-  let diff = timeToMinutes(timeOut!) - timeToMinutes(timeIn!)
-  if (diff < 0) diff += 24 * 60 // overnight shift
   return Math.max(diff / 60 - breakHours, 0)
 }
 
-// Anything worked beyond basic hours
+// Effective hours actually worked, capped at 8 — anything beyond 8 is overtime, not basic.
+const computeBasicHours = (timeIn: string | null, timeOut: string | null, breakHours: number, shiftStart: string | null): number => {
+  const hours = computeEffectiveHours(timeIn, timeOut, breakHours, shiftStart)
+  return hours >= 8 ? 8 : hours
+}
+
+// Effective hours worked beyond the 8-hour basic cap
 const computeOtHours = (timeIn: string | null, timeOut: string | null, breakHours: number, shiftStart: string | null): number => {
-  return Math.max(
-    computeRawHours(timeIn, timeOut, breakHours) - computeBasicHours(timeIn, timeOut, breakHours, shiftStart),
-    0
-  )
+  return Math.max(computeEffectiveHours(timeIn, timeOut, breakHours, shiftStart) - 8, 0)
 }
 
 interface PayrollFormProps {
