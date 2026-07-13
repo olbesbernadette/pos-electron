@@ -236,11 +236,15 @@ export function AdminDashboard() {
       ? supabase.from("shift_transactions").select("amount").eq("payment_type", 3).eq("transaction_type", 1).neq("status", 2).eq("branch_id", selectedBranch)
       : supabase.from("shift_transactions").select("amount").eq("payment_type", 3).eq("transaction_type", 1).neq("status", 2)
 
-    const cogsQ = supabase
-      .from("stock_in")
-      .select("created_at, stock_in_items(total)")
-      .gte("created_at", range.from)
-      .lt("created_at", nextDay(range.to))
+    // COGS only applies to the Hardware branch (branch_id 1) — stock_in has no
+    // branch_id of its own, so when another branch is selected COGS should be 0.
+    const cogsQ = (selectedBranch === null || selectedBranch === 1)
+      ? supabase
+          .from("stock_in")
+          .select("created_at, stock_in_items(total)")
+          .gte("created_at", range.from)
+          .lt("created_at", nextDay(range.to))
+      : Promise.resolve({ data: [], error: null })
 
     const [
       { data: salesExpenses, error: salesErr },
