@@ -48,6 +48,7 @@ interface SalesTransaction {
   payment_amount: number
   change: number
   status: number
+  customer_id: number | null
 }
 
 interface Branch {
@@ -98,6 +99,7 @@ export function SalesDataTable() {
   const { hasOpenShift, isLoading: shiftLoading, openShift, refreshShift, currentShiftId, showCloseShiftDialog, setShowCloseShiftDialog } = useShift()
   
   const [data, setData] = useState<SalesTransaction[]>([])
+  const [customerNames, setCustomerNames] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -149,18 +151,38 @@ export function SalesDataTable() {
       
       if (!error && transactions) {
         setData(transactions)
-        
+
         // Get unique shift IDs
         const uniqueShifts = [...new Set(transactions.map(t => t.shift_id))]
           .map(id => ({ id }))
         setShifts(uniqueShifts)
       }
-      
+
       setLoading(false)
     }
-    
+
     fetchData()
   }, [currentShiftId])
+
+  // Fetch customer names for lookup (used to append customer to Payment Type column)
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      const supabase = createClient()
+      const { data: customers, error } = await supabase
+        .from("customers")
+        .select("id, customer_name")
+
+      if (!error && customers) {
+        const map: Record<number, string> = {}
+        for (const c of customers) {
+          map[c.id] = c.customer_name
+        }
+        setCustomerNames(map)
+      }
+    }
+
+    fetchCustomers()
+  }, [])
 
   // Request browser notification permission on mount
   useEffect(() => {
@@ -348,7 +370,12 @@ export function SalesDataTable() {
           )}
         </button>
       ),
-      cell: ({ row }) => paymentTypeLabels[row.getValue("payment_type") as number] || "Unknown",
+      cell: ({ row }) => {
+        const label = paymentTypeLabels[row.getValue("payment_type") as number] || "Unknown"
+        const customerId = row.original.customer_id
+        const customerName = customerId ? customerNames[customerId] : null
+        return customerName ? `${label} - ${customerName}` : label
+      },
     },
     {
       accessorKey: "amount",
