@@ -64,6 +64,7 @@ export function PayrollTable() {
   const [search, setSearch] = useState("")
   const [branchFilter, setBranchFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
+  const [periodFilter, setPeriodFilter] = useState("all")
   const [rowSelection, setRowSelection] = useState({})
 
   // Delete dialog
@@ -121,6 +122,16 @@ export function PayrollTable() {
     () => Array.from(new Set(data.map(r => r.employee_type).filter((t): t is string => !!t))).sort(),
     [data]
   )
+  const periodOptions = useMemo(() => {
+    const map = new Map<string, { period_start: string; period_end: string }>()
+    data.forEach(r => {
+      const key = `${r.period_start}|${r.period_end}`
+      if (!map.has(key)) map.set(key, { period_start: r.period_start, period_end: r.period_end })
+    })
+    return Array.from(map.entries())
+      .map(([value, period]) => ({ value, ...period }))
+      .sort((a, b) => b.period_start.localeCompare(a.period_start))
+  }, [data])
 
   const filteredData = useMemo(() => {
     let result = data
@@ -130,6 +141,9 @@ export function PayrollTable() {
     if (typeFilter !== "all") {
       result = result.filter(r => r.employee_type === typeFilter)
     }
+    if (periodFilter !== "all") {
+      result = result.filter(r => `${r.period_start}|${r.period_end}` === periodFilter)
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(
@@ -137,7 +151,7 @@ export function PayrollTable() {
       )
     }
     return result
-  }, [data, search, branchFilter, typeFilter])
+  }, [data, search, branchFilter, typeFilter, periodFilter])
 
   const openDelete = (record: PayrollRow) => {
     setRecordToDelete(record)
@@ -346,6 +360,20 @@ export function PayrollTable() {
             </SelectContent>
           </Select>
 
+          <Select value={periodFilter} onValueChange={setPeriodFilter}>
+            <SelectTrigger className="h-9 w-[180px] text-xs font-sans">
+              <SelectValue placeholder="All Periods" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Periods</SelectItem>
+              {periodOptions.map(period => (
+                <SelectItem key={period.value} value={period.value}>
+                  {formatDate(period.period_start)} - {formatDate(period.period_end)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <div className="relative w-64">
             <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -422,7 +450,7 @@ export function PayrollTable() {
       {/* Footer count */}
       <div className="text-xs font-sans text-gray-500">
         {filteredData.length} record{filteredData.length !== 1 ? "s" : ""}
-        {search || branchFilter !== "all" || typeFilter !== "all" ? ` (filtered from ${data.length} total)` : ""}
+        {search || branchFilter !== "all" || typeFilter !== "all" || periodFilter !== "all" ? ` (filtered from ${data.length} total)` : ""}
       </div>
 
       {/* Delete Confirmation Dialog */}

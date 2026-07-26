@@ -6,7 +6,16 @@
       "Bash(Select-Object FullName, PSIsContainer)",
       "Bash(Format-Table -AutoSize)",
       "Bash(npx tsc *)",
-      "Bash(findstr /i \"scripts\\\\|dev\\\\|start\\\\|build\")"
+      "Bash(findstr /i \"scripts\\\\|dev\\\\|start\\\\|build\")",
+      "Bash(timeout 90 npx next build)",
+      "Bash(timeout 40 bash -c 'until curl -sf http://localhost:3000 >/dev/null 2>&1; do sleep 1; done')",
+      "Bash(curl -sf http://localhost:3000 -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s http://localhost:3001)",
+      "Bash(command -v chromium-cli)",
+      "Bash(npm ls *)",
+      "Bash(command -v google-chrome chromium chromium-browser msedge)",
+      "Bash(taskkill //F //PID 7856)"
     ]
   }
 }

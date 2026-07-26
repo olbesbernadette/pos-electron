@@ -22,6 +22,7 @@ import {
 import type { ChartConfig } from "@/components/ui/chart"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CaretDown } from "@phosphor-icons/react"
 
 interface Transaction {
@@ -173,6 +174,19 @@ const branches = [
   { id: 6, name: "Boarders" },
 ]
 
+type SalesTypeFilter = "all" | "cash" | "gcash" | "check" | "credit"
+
+// payment_type (sales) and deposit_type use different numeric codes for the same
+// method, so map each filter to both — deposit_type is null where no deposit
+// equivalent exists (credit sales are never deposited).
+const salesTypeFilters: { key: SalesTypeFilter; label: string; paymentTypeId: number | null; depositTypeId: number | null }[] = [
+  { key: "all",    label: "All",       paymentTypeId: null, depositTypeId: null },
+  { key: "cash",   label: "Cash",      paymentTypeId: 1,    depositTypeId: 1 },
+  { key: "gcash",  label: "GCash",     paymentTypeId: 2,    depositTypeId: 3 },
+  { key: "check",  label: "Check",     paymentTypeId: 3,    depositTypeId: 2 },
+  { key: "credit", label: "Credit",    paymentTypeId: 4,    depositTypeId: null },
+]
+
 export function AdminDashboard() {
   const { currentShiftId, hasOpenShift } = useShift()
 
@@ -180,6 +194,7 @@ export function AdminDashboard() {
   const [dateRangeOption, setDateRangeOption] = useState<DateRangeOption>("mtd")
   const [customFrom, setCustomFrom] = useState("")
   const [customTo, setCustomTo] = useState("")
+  const [depositVsSalesType, setDepositVsSalesType] = useState<SalesTypeFilter>("all")
 
   const [dailyTransactions, setDailyTransactions] = useState<Transaction[]>([])
   const [dailyLoading, setDailyLoading] = useState(true)
@@ -412,6 +427,29 @@ export function AdminDashboard() {
       .sort((a, b) => b.amount - a.amount)
   }, [dateRangeOption, rangeExpensesByType, dailyExpenses, includesOpenShift])
 
+  // Sales by payment type — range-aware (mirrors salesByBranch, grouped by payment_type)
+  const salesByPaymentType = useMemo(() => {
+    const map: Record<number, number> = {}
+    if (dateRangeOption === "today") {
+      dailySales.forEach((t) => { map[t.payment_type] = (map[t.payment_type] || 0) + t.amount })
+    } else {
+      shiftTotalsRawData
+        .filter((r: any) => r.transaction_type === 1)
+        .forEach((r: any) => { map[r.payment_type] = (map[r.payment_type] || 0) + Number(r.total_amount) })
+      if (includesOpenShift) {
+        dailySales.forEach((t) => { map[t.payment_type] = (map[t.payment_type] || 0) + t.amount })
+      }
+    }
+    return map
+  }, [dateRangeOption, shiftTotalsRawData, dailySales, includesOpenShift])
+
+  // Deposits by type — full range total (not day-bucketed)
+  const depositTotalsByType = useMemo(() => {
+    const map: Record<number, number> = {}
+    depositsOverview.forEach((r) => { map[r.deposit_type] = (map[r.deposit_type] || 0) + Number(r.total_amount) })
+    return map
+  }, [depositsOverview])
+
   const totalRangeSales = useMemo(() => {
     if (dateRangeOption === "today") return totalDailySales
     let total = rangeSalesByBranch.reduce((s, r) => s + r.total_amount, 0)
@@ -531,6 +569,34 @@ export function AdminDashboard() {
     () => depositsData.reduce((s, d) => s + d.cash + d.check + d.gcash, 0),
     [depositsData]
   )
+
+  // Deposit vs Sales — Gross Sales, Expenses (cash only), Net Sales, and Deposits,
+  // narrowed to a single payment method via the filter.
+  const depositVsSales = useMemo(() => {
+    // Expense entries are always recorded in cash, so they only apply to the
+    // "Cash" filter (and "All", which includes cash) — every other payment
+    // type never carries an expense deduction.
+    const expensesAmt = (depositVsSalesType === "all" || depositVsSalesType === "cash") ? totalRangeExpenses : 0
+
+    let grossSales: number
+    let depositAmt: number
+    if (depositVsSalesType === "all") {
+      grossSales = totalRangeSales
+      depositAmt = totalDeposits
+    } else {
+      const filter = salesTypeFilters.find((f) => f.key === depositVsSalesType)
+      grossSales = filter?.paymentTypeId != null ? (salesByPaymentType[filter.paymentTypeId] || 0) : 0
+      depositAmt = filter?.depositTypeId != null ? (depositTotalsByType[filter.depositTypeId] || 0) : 0
+    }
+    const netSales = grossSales - expensesAmt
+
+    return [
+      { label: "Gross Sales", amount: grossSales, fill: "#1d4ed8" },
+      { label: "Expenses", amount: expensesAmt, fill: "#93c5fd" },
+      { label: "Net Sales", amount: netSales, fill: "#1e40af" },
+      { label: "Deposits", amount: depositAmt, fill: "#60a5fa" },
+    ]
+  }, [depositVsSalesType, totalRangeSales, totalRangeExpenses, totalDeposits, salesByPaymentType, depositTotalsByType])
 
   return (
     <div className="space-y-6 md:space-y-8">
@@ -705,8 +771,8 @@ export function AdminDashboard() {
         />
       </div>
 
-      {/* Sales & expenses by branch/type */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+      {/* Sales & expenses by branch/type, deposit vs sales */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
         <ChartCard
           title={`Sales by Branch — ${rangeLabel}`}
           subtitle={dateRangeOption === "today" ? "Current shift — updates in realtime" : `Closed shifts${includesOpenShift ? " + current shift" : ""}`}
@@ -727,6 +793,29 @@ export function AdminDashboard() {
           chartClassName=""
         >
           <BarList items={expensesByType.map(e => ({ label: e.type, amount: e.amount, fill: e.fill }))} />
+        </ChartCard>
+
+        <ChartCard
+          title={`Deposit vs Sales — ${rangeLabel}`}
+          subtitle={salesTypeFilters.find(f => f.key === depositVsSalesType)?.label ?? "All"}
+          loading={dateRangeOption === "today" ? dailyLoading : overviewLoading}
+          empty={depositVsSales.every(d => d.amount === 0)}
+          emptyMessage="No sales or deposit data for this period"
+          chartClassName=""
+          headerRight={
+            <Select value={depositVsSalesType} onValueChange={(v) => setDepositVsSalesType(v as SalesTypeFilter)}>
+              <SelectTrigger className="h-7 w-[112px] text-xs font-mono" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {salesTypeFilters.map((f) => (
+                  <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        >
+          <BarList items={depositVsSales} pctBase={depositVsSales[0]?.amount} />
         </ChartCard>
       </div>
 
@@ -1017,14 +1106,23 @@ export function AdminDashboard() {
   )
 }
 
-function BarList({ items }: { items: { label: string; amount: number; fill: string }[] }) {
-  const max = Math.max(...items.map((i) => i.amount), 1)
-  const total = items.reduce((s, i) => s + i.amount, 0)
+function BarList({
+  items,
+  pctBase,
+}: {
+  items: { label: string; amount: number; fill: string }[]
+  /** Denominator for each row's %. Defaults to the sum of items — pass this
+   *  explicitly when rows aren't independent shares of a whole (e.g. a
+   *  gross/expenses/net waterfall), so the % reflects share of that base instead. */
+  pctBase?: number
+}) {
+  const max = Math.max(...items.map((i) => Math.abs(i.amount)), 1)
+  const total = pctBase ?? items.reduce((s, i) => s + i.amount, 0)
   return (
     <div className="space-y-3">
       {items.map((item, idx) => {
         const pct = total > 0 ? Math.round((item.amount / total) * 100) : 0
-        const barWidth = (item.amount / max) * 100
+        const barWidth = Math.max(0, (item.amount / max) * 100)
         return (
           <div key={idx}>
             <div className="flex items-baseline justify-between mb-1">
@@ -1088,6 +1186,7 @@ function ChartCard({
   empty,
   emptyMessage = "No data",
   chartClassName,
+  headerRight,
   children,
 }: {
   title: string
@@ -1096,13 +1195,17 @@ function ChartCard({
   empty: boolean
   emptyMessage?: string
   chartClassName?: string
+  headerRight?: React.ReactNode
   children?: React.ReactNode
 }) {
   return (
     <div className="border border-gray-200 p-4 sm:p-6 flex flex-col gap-4">
-      <div className="shrink-0">
-        <h3 className="text-sm font-sans font-medium tracking-wide">{title}</h3>
-        <p className="text-xs font-sans text-gray-400 mt-0.5">{subtitle}</p>
+      <div className="shrink-0 flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-sans font-medium tracking-wide">{title}</h3>
+          <p className="text-xs font-sans text-gray-400 mt-0.5">{subtitle}</p>
+        </div>
+        {headerRight && <div className="shrink-0">{headerRight}</div>}
       </div>
       <div className={chartClassName ?? "flex-1 min-h-[200px] sm:min-h-[260px]"}>
         {loading ? (
