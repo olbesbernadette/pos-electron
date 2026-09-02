@@ -594,7 +594,7 @@ export function EmployeesTable() {
               </div>
             </div>
             <p className="text-xs text-gray-400 font-sans">
-              H Pay and S Pay are computed automatically from R Pay (×1.3 and ×1.25).
+              H Pay and S Pay are computed automatically from R Pay (×2 and ×1.3).
             </p>
           </div>
           <DialogFooter>

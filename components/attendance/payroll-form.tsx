@@ -287,7 +287,8 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
     setPgbgAmount(checked ? (selectedEmployee?.pgbg ?? 0).toString() : "")
   }
 
-  // Basic pay rate depends on the day type: Regular uses r_pay, Special uses s_pay, Holiday uses h_pay
+  // Basic pay rate depends on the day type: Regular uses r_pay, Special uses s_pay (1.3x DOLE),
+  // Holiday uses h_pay (2x DOLE)
   const basicRateForDayType = (dayType: string): number => {
     if (dayType === "S") return sPay
     if (dayType === "H") return hPay
