@@ -295,12 +295,15 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
     return rPay
   }
 
+  // OT premium is 1.25x the basic rate that applies to that day's day type
+  const otRateForDayType = (dayType: string): number => basicRateForDayType(dayType) * 1.25
+
   const totals = useMemo(() => {
     return rows.reduce(
       (acc, r) => {
         const breakHours = parseFloat(r.break_hours) || 0
         acc.basicPay += computeBasicHours(r.time_in, r.time_out, breakHours, r.shift_start) * basicRateForDayType(r.day_type)
-        acc.otPay += computeOtHours(r.time_in, r.time_out, breakHours, r.shift_start) * sPay
+        acc.otPay += computeOtHours(r.time_in, r.time_out, breakHours, r.shift_start) * otRateForDayType(r.day_type)
         acc.allowance += r.has_allowance ? parseFloat(r.allowance_amount) || 0 : 0
         return acc
       },
@@ -590,7 +593,7 @@ export function PayrollForm({ branchId }: PayrollFormProps) {
                     {computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start).toFixed(2)}
                   </TableCell>
                   <TableCell className="text-sm py-3 whitespace-nowrap font-mono">
-                    {(computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start) * sPay).toFixed(2)}
+                    {(computeOtHours(row.time_in, row.time_out, parseFloat(row.break_hours) || 0, row.shift_start) * otRateForDayType(row.day_type)).toFixed(2)}
                   </TableCell>
                   <TableCell className="py-3">
                     <div className="flex items-center gap-2">
