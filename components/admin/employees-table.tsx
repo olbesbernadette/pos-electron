@@ -22,6 +22,7 @@ import {
 import { ArrowUp, ArrowDown, CaretUpDown, MagnifyingGlass, PencilSimple, Plus } from "@phosphor-icons/react"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { TimePicker } from "@/components/attendance/time-picker"
 
 const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat("en-PH", {
@@ -55,6 +56,7 @@ interface EmployeeRow {
   phic: number
   pgbg: number
   status: number
+  shift_start: string
 }
 
 interface EmployeeFormState {
@@ -67,6 +69,7 @@ interface EmployeeFormState {
   sss: string
   phic: string
   pgbg: string
+  shift_start: string
 }
 
 const emptyForm: EmployeeFormState = {
@@ -79,6 +82,7 @@ const emptyForm: EmployeeFormState = {
   sss: "",
   phic: "",
   pgbg: "",
+  shift_start: "07:30",
 }
 
 export function EmployeesTable() {
@@ -99,7 +103,7 @@ export function EmployeesTable() {
     const supabase = createClient()
     const { data: rows, error } = await supabase
       .from("employees")
-      .select("id, employee_name, employee_type, branch_id, r_pay, h_pay, s_pay, incentives, bonus, sss, phic, pgbg, status, branches(name)")
+      .select("id, employee_name, employee_type, branch_id, r_pay, h_pay, s_pay, incentives, bonus, sss, phic, pgbg, status, shift_start, branches(name)")
       .order("employee_name", { ascending: true })
 
     if (error) {
@@ -160,6 +164,7 @@ export function EmployeesTable() {
       sss: employee.sss.toString(),
       phic: employee.phic.toString(),
       pgbg: employee.pgbg.toString(),
+      shift_start: employee.shift_start?.slice(0, 5) || "07:30",
     })
     setFormDialogOpen(true)
   }
@@ -179,6 +184,7 @@ export function EmployeesTable() {
       sss: parseFloat(form.sss) || 0,
       phic: parseFloat(form.phic) || 0,
       pgbg: parseFloat(form.pgbg) || 0,
+      shift_start: form.shift_start || "07:30",
     }
 
     if (employeeToEdit) {
@@ -336,6 +342,17 @@ export function EmployeesTable() {
         ) : (
           <span className="text-gray-400 text-sm">—</span>
         )
+      },
+    },
+    {
+      accessorKey: "shift_start",
+      header: "Shift Start",
+      cell: ({ row }) => {
+        const value = row.getValue("shift_start") as string
+        const [h, m] = value.slice(0, 5).split(":").map(Number)
+        const hour12 = (h % 12) || 12
+        const period = h >= 12 ? "PM" : "AM"
+        return <span className="font-mono text-sm">{`${hour12}:${m.toString().padStart(2, "0")} ${period}`}</span>
       },
     },
     {
@@ -523,6 +540,14 @@ export function EmployeesTable() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-sans text-gray-500 uppercase tracking-wider">Shift Start</label>
+              <TimePicker
+                value={form.shift_start}
+                onChange={(v) => setForm(f => ({ ...f, shift_start: v }))}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

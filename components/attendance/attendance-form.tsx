@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { CaretDown, ArrowUp, ArrowDown, CaretUpDown } from "@phosphor-icons/react"
+import { CaretDown, ArrowUp, ArrowDown, CaretUpDown, Plus, Minus } from "@phosphor-icons/react"
 import { format, parse, getDay } from "date-fns"
 import { createClient } from "@/lib/supabase/client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Button } from "@/components/ui/button"
 import { TimePicker } from "./time-picker"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -20,6 +21,7 @@ interface EmployeeRow {
   id: string
   employee_name: string
   employee_type: string | null
+  shift_start: string
 }
 
 interface AttendanceEntry {
@@ -29,8 +31,65 @@ interface AttendanceEntry {
   break_hours: string
 }
 
-// Default entry for employees with no saved attendance yet for the selected date
-const emptyEntry: AttendanceEntry = { shift_start: "07:30", time_in: "07:30", time_out: "17:00", break_hours: "1" }
+// Default entry for employees with no saved attendance yet for the selected date —
+// shift_start (and the time_in it seeds) defaults to the employee's own configured shift start
+const emptyEntryFor = (emp: EmployeeRow | undefined): AttendanceEntry => {
+  const start = emp?.shift_start?.slice(0, 5) || "07:30"
+  return { shift_start: start, time_in: start, time_out: "17:00", break_hours: "1" }
+}
+
+const BREAK_HOURS_STEP = 0.25
+
+// Rounds to avoid float drift (e.g. 0.1 + 0.2), and floors at 0 since break hours can't go negative
+const adjustBreakHours = (value: string, delta: number): string => {
+  const current = parseFloat(value) || 0
+  const next = Math.max(0, Math.round((current + delta) * 100) / 100)
+  return next.toString()
+}
+
+interface BreakHoursInputProps {
+  value: string
+  onChange: (value: string) => void
+  disabled?: boolean
+  className?: string
+}
+
+const BreakHoursInput = ({ value, onChange, disabled, className }: BreakHoursInputProps) => (
+  <div className={cn("flex items-center gap-1", className)}>
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="h-9 w-9 shrink-0"
+      disabled={disabled}
+      onClick={() => onChange(adjustBreakHours(value, -BREAK_HOURS_STEP))}
+    >
+      <Minus className="w-3.5 h-3.5" />
+    </Button>
+    <input
+      type="number"
+      min="0"
+      step={BREAK_HOURS_STEP}
+      placeholder="0"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onWheel={(e) => e.currentTarget.blur()}
+      disabled={disabled}
+      className="w-16 px-2 py-2 text-sm font-mono border border-gray-200 rounded-md text-center focus:outline-none focus:border-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+    />
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="h-9 w-9 shrink-0"
+      disabled={disabled}
+      onClick={() => onChange(adjustBreakHours(value, BREAK_HOURS_STEP))}
+    >
+      <Plus className="w-3.5 h-3.5" />
+    </Button>
+  </div>
+)
 
 const dayTypeLabels: Record<string, string> = { R: "R - Regular", S: "S - Special", H: "H - Holiday" }
 
@@ -182,7 +241,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
       const supabase = createClient()
       const { data: rows, error } = await supabase
         .from("employees")
-        .select("id, employee_name, employee_type")
+        .select("id, employee_name, employee_type, shift_start")
         .eq("branch_id", branchId)
         .eq("status", 1)
 
@@ -233,7 +292,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
 
   const updateEntry = (employeeId: string, field: keyof AttendanceEntry, value: string) => {
     setEntries(prev => {
-      const current = prev[employeeId] ?? emptyEntry
+      const current = prev[employeeId] ?? emptyEntryFor(employees.find(e => e.id === employeeId))
       const updated = { ...current, [field]: value }
       // Marking time in as Absent means the whole day is absent — clear time out and break too
       if (field === "time_in" && value === "00:00") {
@@ -247,7 +306,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
   const handleSave = async () => {
     const rows = employees
       .map(emp => {
-        const entry = entries[emp.id] ?? emptyEntry
+        const entry = entries[emp.id] ?? emptyEntryFor(emp)
         if (!entry.time_in && !entry.time_out) return null
         return {
           employee_id: emp.id,
@@ -389,7 +448,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
           </div>
         ) : sortedEmployees.length ? (
           sortedEmployees.map(emp => {
-            const entry = entries[emp.id] ?? emptyEntry
+            const entry = entries[emp.id] ?? emptyEntryFor(emp)
             return (
               <div key={emp.id} className="border border-gray-200 rounded-md p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -433,17 +492,10 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                 </div>
                 <div className="space-y-1.5">
                   <label className="block text-xs text-gray-500 font-mono tracking-wider uppercase">Break (hrs)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.25"
-                    placeholder="0"
+                  <BreakHoursInput
                     value={entry.break_hours}
-                    onChange={(e) => updateEntry(emp.id, "break_hours", e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    onWheel={(e) => e.currentTarget.blur()}
+                    onChange={(v) => updateEntry(emp.id, "break_hours", v)}
                     disabled={!isEditing}
-                    className="w-full px-3 py-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </div>
@@ -502,7 +554,7 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
               </TableRow>
             ) : sortedEmployees.length ? (
               sortedEmployees.map(emp => {
-                const entry = entries[emp.id] ?? emptyEntry
+                const entry = entries[emp.id] ?? emptyEntryFor(emp)
                 return (
                   <TableRow key={emp.id}>
                     <TableCell className="text-sm py-3">
@@ -537,17 +589,10 @@ export function AttendanceForm({ branchId }: AttendanceFormProps) {
                       />
                     </TableCell>
                     <TableCell className="text-sm py-3">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.25"
-                        placeholder="0"
+                      <BreakHoursInput
                         value={entry.break_hours}
-                        onChange={(e) => updateEntry(emp.id, "break_hours", e.target.value)}
-                        onFocus={(e) => e.target.select()}
-                        onWheel={(e) => e.currentTarget.blur()}
+                        onChange={(v) => updateEntry(emp.id, "break_hours", v)}
                         disabled={!isEditing}
-                        className="w-24 px-3 py-2 text-sm font-mono border border-gray-200 rounded-md focus:outline-none focus:border-black transition-colors text-right disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-gray-50 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </TableCell>
                   </TableRow>
