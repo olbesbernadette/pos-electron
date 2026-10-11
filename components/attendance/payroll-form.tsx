@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import { CaretDown } from "@phosphor-icons/react"
-import { format, parse, startOfWeek, endOfWeek } from "date-fns"
+import { format, parse, startOfWeek, endOfWeek, subDays } from "date-fns"
 import type { DateRange } from "react-day-picker"
 import { createClient } from "@/lib/supabase/client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -98,10 +98,15 @@ interface PayrollFormProps {
 export function PayrollForm({ branchId }: PayrollFormProps) {
   const [employees, setEmployees] = useState<EmployeeRow[]>([])
   const [employeeId, setEmployeeId] = useState<string>("")
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({
-    from: startOfWeek(new Date(), { weekStartsOn: 1 }),
-    to: endOfWeek(new Date(), { weekStartsOn: 1 }),
-  }))
+  // Anchor on yesterday, not today: on Sunday (the first day of a new Sun-Sat week) this
+  // rolls back to the just-finished week, while Mon-Sat it stays on the week in progress.
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const anchor = subDays(new Date(), 1)
+    return {
+      from: startOfWeek(anchor, { weekStartsOn: 0 }),
+      to: endOfWeek(anchor, { weekStartsOn: 0 }),
+    }
+  })
   const [rangeOpen, setRangeOpen] = useState(false)
   const [rows, setRows] = useState<PayrollRow[]>([])
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false)
