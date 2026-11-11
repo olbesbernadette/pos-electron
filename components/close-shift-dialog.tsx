@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button"
 import { WarningCircle, CheckCircle, CircleNotch } from "@phosphor-icons/react"
 import { createClient } from "@/lib/supabase/client"
+import { format } from "date-fns"
+import { toast } from "sonner"
 
 interface ShiftTotalsSummary {
   branch_id: number
@@ -16,6 +18,27 @@ interface ShiftTotalsSummary {
   total_amount: number
   total_payment: number
   transaction_count: number
+}
+
+interface ShiftCheck {
+  branch_id: number
+  amount: number
+  bank_name: string | null
+  check_number: string | null
+  check_date: string | null
+}
+
+interface ShiftExpense {
+  branch_id: number
+  payment_type: number
+  amount: number
+  description: string | null
+}
+
+interface ShiftPrintDetails {
+  startTime: string | null
+  checks: ShiftCheck[]
+  expenses: ShiftExpense[]
 }
 
 interface CloseShiftDialogProps {
@@ -60,6 +83,7 @@ export function CloseShiftDialog({ isOpen, onClose, shiftId, onShiftClosed, user
   const [summary, setSummary] = useState<ShiftTotalsSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [printDetails, setPrintDetails] = useState<ShiftPrintDetails | null>(null)
 
   // Fetch shift summary when dialog opens
   useEffect(() => {
@@ -68,6 +92,7 @@ export function CloseShiftDialog({ isOpen, onClose, shiftId, onShiftClosed, user
     } else {
       // Reset state when dialog closes
       setSummary([])
+      setPrintDetails(null)
       setError(null)
       setSuccess(false)
     }
@@ -100,10 +125,135 @@ export function CloseShiftDialog({ isOpen, onClose, shiftId, onShiftClosed, user
       }))
 
       setSummary(mappedData)
+      setPrintDetails(await fetchPrintDetails(shiftId))
     } catch (err) {
       setError("An unexpected error occurred")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Fetch the itemized checks and expenses for the printed shift summary
+  const fetchPrintDetails = async (id: number): Promise<ShiftPrintDetails> => {
+    const supabase = createClient()
+
+    const [shiftRes, checkTxnRes, expenseRes] = await Promise.all([
+      supabase.from("shifts").select("start_time").eq("id", id).single(),
+      supabase
+        .from("shift_transactions")
+        .select("id, branch_id, amount")
+        .eq("shift_id", id)
+        .eq("transaction_type", 1)
+        .eq("payment_type", 3)
+        .order("id", { ascending: true }),
+      supabase
+        .from("shift_transactions")
+        .select("id, branch_id, payment_type, amount, details1")
+        .eq("shift_id", id)
+        .eq("transaction_type", 2)
+        .order("id", { ascending: true }),
+    ])
+
+    const checkTxns = checkTxnRes.data || []
+    let checkDetailsById: Record<number, any> = {}
+    if (checkTxns.length > 0) {
+      const { data: details } = await supabase
+        .from("check_details")
+        .select("transaction_id, bank_name, check_number, check_date, check_amount")
+        .in("transaction_id", checkTxns.map((t: any) => t.id))
+      checkDetailsById = Object.fromEntries((details || []).map((d: any) => [d.transaction_id, d]))
+    }
+
+    return {
+      startTime: shiftRes.data?.start_time ?? null,
+      checks: checkTxns.map((t: any) => {
+        const d = checkDetailsById[t.id]
+        return {
+          branch_id: t.branch_id,
+          amount: Number(d?.check_amount ?? t.amount) || 0,
+          bank_name: d?.bank_name ?? null,
+          check_number: d?.check_number ?? null,
+          check_date: d?.check_date ?? null,
+        }
+      }),
+      expenses: (expenseRes.data || []).map((e: any) => ({
+        branch_id: e.branch_id,
+        payment_type: e.payment_type,
+        amount: Number(e.amount) || 0,
+        description: e.details1 ?? null,
+      })),
+    }
+  }
+
+  const printShiftSummary = async () => {
+    const isElectron = (window as any).electronAPI?.isElectron
+    if (!isElectron) return
+
+    const fmt = (n: number) =>
+      n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const separator = { text: "-----------------------------------------------", align: "center" as const }
+    const blank = { text: "", align: "left" as const }
+    const line = (text: string, bold = false) => ({ text, align: "left" as const, bold })
+
+    const salesByPayment = (paymentType: number) =>
+      summary
+        .filter(s => s.transaction_type === 1 && s.payment_type === paymentType)
+        .reduce((sum, s) => sum + Number(s.total_amount), 0)
+
+    const cash = salesByPayment(1)
+    const gcash = salesByPayment(2)
+    const check = salesByPayment(3)
+    const checks = printDetails?.checks || []
+    const expenses = printDetails?.expenses || []
+    const totalChecks = checks.reduce((sum, c) => sum + c.amount, 0)
+    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+
+    const receiptLines: { text: string; align: "left" | "center" | "right"; bold?: boolean }[] = [
+      { text: "SHIFT SUMMARY", align: "center", bold: true },
+      blank,
+      line(`Shift ID: ${shiftId}`),
+      ...(printDetails?.startTime
+        ? [line(`Opened: ${format(new Date(printDetails.startTime), "MM/dd/yyyy hh:mm a")}`)]
+        : []),
+      line(`Closed: ${format(new Date(), "MM/dd/yyyy hh:mm a")}`),
+      line(`Closed by: ${userEmail}`),
+      separator,
+      line("SALES", true),
+      line(`Cash: ${fmt(cash)}`),
+      line(`GCash: ${fmt(gcash)}`),
+      line(`Check: ${fmt(check)}`),
+      line(`Total: ${fmt(cash + gcash + check)}`, true),
+      separator,
+      line(`CHECKS (${checks.length})`, true),
+      ...(checks.length === 0
+        ? [line("No checks")]
+        : checks.flatMap((c, i) => [
+            line(`${i + 1}. ${c.bank_name || "-"} #${c.check_number || "-"}`),
+            line(`   ${branchNames[c.branch_id] || `Branch ${c.branch_id}`}${c.check_date ? ` | ${c.check_date}` : ""}: ${fmt(c.amount)}`),
+          ])),
+      line(`Total Checks: ${fmt(totalChecks)}`, true),
+      separator,
+      line(`EXPENSES (${expenses.length})`, true),
+      ...(expenses.length === 0
+        ? [line("No expenses")]
+        : expenses.map((e, i) => {
+            const category = paymentTypeNames[e.payment_type] || `Type ${e.payment_type}`
+            const branch = branchNames[e.branch_id] || `Branch ${e.branch_id}`
+            return line(`${i + 1}. ${branch} - ${category}${e.description ? ` (${e.description})` : ""}: ${fmt(e.amount)}`)
+          })),
+      line(`Total Expenses: ${fmt(totalExpenses)}`, true),
+      separator,
+    ]
+
+    try {
+      const result = await (window as any).electronAPI.printReceipt({ lines: receiptLines })
+      if (!result.success) {
+        console.error("[v0] Electron print failed:", result.error)
+        toast.error("Failed to print shift summary")
+      }
+    } catch (printError) {
+      console.error("[v0] Print error:", printError)
+      toast.error("Print error occurred")
     }
   }
 
@@ -133,6 +283,7 @@ export function CloseShiftDialog({ isOpen, onClose, shiftId, onShiftClosed, user
       }
 
       setSuccess(true)
+      printShiftSummary()
       
       // Notify parent and close dialog after a short delay
       setTimeout(() => {
