@@ -195,10 +195,23 @@ export function CloseShiftDialog({ isOpen, onClose, shiftId, onShiftClosed, user
     const blank = { text: "", align: "left" as const }
     const line = (text: string, bold = false) => ({ text, align: "left" as const, bold })
 
-    const salesByPayment = (paymentType: number) =>
+    const salesByPayment = (paymentType: number, branchId?: number) =>
       summary
-        .filter(s => s.transaction_type === 1 && s.payment_type === paymentType)
+        .filter(s =>
+          s.transaction_type === 1 &&
+          s.payment_type === paymentType &&
+          (branchId === undefined || s.branch_id === branchId)
+        )
         .reduce((sum, s) => sum + Number(s.total_amount), 0)
+
+    // Branches that had any Cash/GCash/Check sales this shift, in branch order
+    const salesBranchIds = Array.from(
+      new Set(
+        summary
+          .filter(s => s.transaction_type === 1 && [1, 2, 3].includes(s.payment_type))
+          .map(s => s.branch_id)
+      )
+    ).sort((a, b) => a - b)
 
     const cash = salesByPayment(1)
     const gcash = salesByPayment(2)
@@ -219,6 +232,22 @@ export function CloseShiftDialog({ isOpen, onClose, shiftId, onShiftClosed, user
       line(`Closed by: ${userEmail}`),
       separator,
       line("SALES", true),
+      ...(salesBranchIds.length === 0
+        ? [line("No sales")]
+        : salesBranchIds.flatMap(branchId => {
+            const bCash = salesByPayment(1, branchId)
+            const bGcash = salesByPayment(2, branchId)
+            const bCheck = salesByPayment(3, branchId)
+            return [
+              line(branchNames[branchId] || `Branch ${branchId}`, true),
+              line(`  Cash: ${fmt(bCash)}`),
+              line(`  GCash: ${fmt(bGcash)}`),
+              line(`  Check: ${fmt(bCheck)}`),
+              line(`  Subtotal: ${fmt(bCash + bGcash + bCheck)}`),
+              blank,
+            ]
+          })),
+      line("ALL BRANCHES", true),
       line(`Cash: ${fmt(cash)}`),
       line(`GCash: ${fmt(gcash)}`),
       line(`Check: ${fmt(check)}`),
